@@ -1,6 +1,14 @@
 # portal-paciente-clinica
 Portal paciente para una única clínica, dominio aprobado para Arquitectura de Software 2026.
-Entrega 1: diseño inicial, contrato HTTP y mock. Contenido publicado en la rama main del repositorio público [OctiDelFabro/portal-paciente-clinica](https://github.com/OctiDelFabro/portal-paciente-clinica). Integrantes y comisión pendientes de completar.
+Entrega 1: diseño inicial, contrato HTTP y mock. Contenido publicado en la rama main del repositorio público [OctiDelFabro/portal-paciente-clinica](https://github.com/OctiDelFabro/portal-paciente-clinica).
+
+## Integrantes
+
+- Octavio Del Fabro
+- Andres Romanutti
+- Matias Yelicich
+
+Comisión: pendiente de completar.
 
 ## Flujo principal y alcance
 Un paciente se registra y recepción verifica sus datos antes de habilitarlo. Busca médicos/especialidades y reserva un turno disponible con al menos 24 h de anticipación. Se evitan superposiciones del médico y del paciente. La reserva genera aviso interno y correo; el recordatorio se prevé 24 h antes.

@@ -18,7 +18,7 @@ Dominio aprobado: portal paciente de una clínica. La integración a consumir si
 ## Acciones para presentar
 1. Utilizar el repositorio público existente OctiDelFabro/portal-paciente-clinica.
 2. Utilizar el contenido publicado en main, conservando su estructura. No subir .env ni .cache.
-3. Completar nombres de integrantes y comisión en README; el enlace del repositorio ya fue confirmado.
+3. Completar la comisión en README. Los integrantes ya están registrados: Octavio Del Fabro, Andres Romanutti y Matias Yelicich; el enlace del repositorio ya fue confirmado.
 4. Ejecutar el mock en la computadora de presentación y demostrar catálogo → POST 202 → GET de estado → replay con el mismo ID.
 5. Validar Docker y la instalación del frontend en un entorno operativo. Compose no acredita conexiones reales ni flujos clínicos.
 6. Revisar y aceptar con el grupo los parámetros técnicos iniciales documentados en D5/D8.
