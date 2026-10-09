@@ -1,0 +1,31 @@
+{
+  "executedAt": "2026-10-09T02:07:38.385341+00:00",
+  "passed": 18,
+  "checks": [
+    "health sin autenticacion",
+    "catalogo de tres plantillas",
+    "aceptacion de plantilla 1",
+    "aceptacion de plantilla 2",
+    "aceptacion de plantilla 3",
+    "POST aceptado",
+    "replay conserva ID y respuesta",
+    "clave con datos distintos",
+    "resultado simulado",
+    "aislamiento entre consumidores",
+    "autenticacion requerida",
+    "JSON invalido",
+    "clave de idempotencia requerida",
+    "plantilla inexistente",
+    "tipo de contenido",
+    "limite de cuerpo",
+    "aceptacion antes de fallo",
+    "fallo terminal simulado"
+  ],
+  "scope": "HTTP real en loopback, respuestas verificadas contra el subconjunto de schema usado; no validador completo de OpenAPI.",
+  "limits": [
+    "Sin correo real",
+    "Sin bases",
+    "Sin RabbitMQ",
+    "Sin despliegue publico"
+  ]
+}

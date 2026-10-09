@@ -1,0 +1,12 @@
+{
+  "templateId": "operation-reminder.v1",
+  "recipient": {
+    "email": "usuario@example.com"
+  },
+  "parameters": {
+    "operationName": "Reserva",
+    "reference": "REF-123",
+    "scheduledAt": "2026-10-10T15:00:00-03:00"
+  }
+}
+

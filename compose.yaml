@@ -1,0 +1,92 @@
+name: portal-paciente-clinica
+services:
+  notifications-mock:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+    environment:
+      MOCK_API_KEYS: ${MOCK_API_KEYS:?Definir MOCK_API_KEYS}
+      MOCK_ADDR: 0.0.0.0:8085
+    ports: ["127.0.0.1:8085:8085"]
+  gateway:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+      args:
+        SERVICE_PATH: ./gateway/cmd
+    environment:
+      HTTP_ADDR: 0.0.0.0:8080
+      NOTIFICATIONS_URL: http://notifications-mock:8085
+    depends_on: [notifications-mock]
+    ports: ["127.0.0.1:8080:8080"]
+  turnos:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+      args:
+        SERVICE_PATH: ./services/turnos/cmd
+    environment:
+      HTTP_ADDR: 0.0.0.0:8081
+    ports: ["127.0.0.1:8081:8081"]
+  pacientes:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+      args:
+        SERVICE_PATH: ./services/pacientes/cmd
+    environment:
+      HTTP_ADDR: 0.0.0.0:8082
+    ports: ["127.0.0.1:8082:8082"]
+  medicos:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+      args:
+        SERVICE_PATH: ./services/medicos/cmd
+    environment:
+      HTTP_ADDR: 0.0.0.0:8083
+    ports: ["127.0.0.1:8083:8083"]
+  historia-clinica:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+      args:
+        SERVICE_PATH: ./services/historia-clinica/cmd
+    environment:
+      HTTP_ADDR: 0.0.0.0:8084
+    ports: ["127.0.0.1:8084:8084"]
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Definir MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./infra/mysql-init.sql:/docker-entrypoint-initdb.d/01-databases.sql:ro
+  mongodb:
+    image: mongo:8.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: localroot
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Definir MONGO_ROOT_PASSWORD}
+    volumes: [mongo-data:/data/db]
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    environment:
+      RABBITMQ_DEFAULT_USER: localuser
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Definir RABBITMQ_PASSWORD}
+  redis:
+    image: redis:7.4-alpine
+  opensearch:
+    image: opensearchproject/opensearch:3.0.0
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    ulimits:
+      memlock: {soft: -1, hard: -1}
+    volumes: [opensearch-data:/usr/share/opensearch/data]
+volumes:
+  mysql-data:
+  mongo-data:
+  opensearch-data:
+

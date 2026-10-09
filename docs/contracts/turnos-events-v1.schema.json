@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Eventos de Turnos v1 - propuesta interna",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "eventType",
+    "version",
+    "occurredAt",
+    "correlationId",
+    "data"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "enum": [
+        "turnos.reservado.v1",
+        "turnos.cancelado.v1",
+        "turnos.reprogramado.v1",
+        "turnos.recordatorio-solicitado.v1"
+      ]
+    },
+    "version": {
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correlationId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "turnId",
+        "patientId",
+        "doctorId",
+        "startAt",
+        "endAt",
+        "appointmentVersion"
+      ],
+      "properties": {
+        "turnId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "patientId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "doctorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "startAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "appointmentVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previousStartAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "previousEndAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "eventType": {
+            "const": "turnos.reprogramado.v1"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "required": [
+              "previousStartAt",
+              "previousEndAt"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "eventType": {
+            "const": "turnos.cancelado.v1"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "required": [
+              "reasonCode"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

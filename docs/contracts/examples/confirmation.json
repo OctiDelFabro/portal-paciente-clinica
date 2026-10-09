@@ -1,0 +1,11 @@
+{
+  "templateId": "operation-confirmed.v1",
+  "recipient": {
+    "email": "usuario@example.com"
+  },
+  "parameters": {
+    "operationName": "Reserva",
+    "reference": "REF-123"
+  }
+}
+

@@ -1,0 +1,12 @@
+FROM golang:1.26.1-alpine AS build
+WORKDIR /src
+COPY go.mod ./
+COPY . .
+ARG SERVICE_PATH=./services/notifications/mock
+RUN CGO_ENABLED=0 go build -o /app ${SERVICE_PATH}
+FROM alpine:3.22
+RUN addgroup -S app && adduser -S app -G app
+USER app
+COPY --from=build /app /app
+ENTRYPOINT ["/app"]
+

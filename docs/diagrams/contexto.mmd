@@ -1,0 +1,17 @@
+flowchart TB
+ p["Paciente / responsable"]
+ m["Médico"]
+ r["Recepción"]
+ portal["Portal paciente de clínica"]
+ consumidor["Microservicio del grupo consumidor"]
+ proveedor["Grupo proveedor: pendiente de asignación"]
+ correo["Proveedor de correo: pendiente"]
+ identidad["Proveedor de identidad: pendiente"]
+ p -->|"Turnos e historia clínica"| portal
+ m -->|"Agenda y atenciones"| portal
+ r -->|"Pacientes, vínculos y turnos"| portal
+ consumidor -->|"API HTTP de correos por plantillas"| portal
+ portal -.->|"Capacidad a definir"| proveedor
+ portal -->|"Envío de correos"| correo
+ portal -->|"Autenticación"| identidad
+

@@ -1,0 +1,2 @@
+body{margin:0;background:#f1f6f8;color:#163442;font-family:system-ui,sans-serif}main{max-width:900px;margin:70px auto;padding:28px}h1{font-size:42px;line-height:1.1;max-width:600px}.tag{color:#147d7a;font-weight:700}.notice{padding:18px;border:1px solid #96bdbf;border-radius:12px;background:#e4f3f1}section{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:35px}article{background:white;padding:24px;border-radius:16px}h2{font-size:20px}@media(max-width:650px){section{grid-template-columns:1fr}h1{font-size:32px}main{margin-top:25px}}
+

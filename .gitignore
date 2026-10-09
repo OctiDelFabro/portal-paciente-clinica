@@ -1,0 +1,7 @@
+.env
+.cache/
+node_modules/
+frontend/dist/
+*.exe
+*.log
+

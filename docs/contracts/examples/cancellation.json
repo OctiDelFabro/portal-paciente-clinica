@@ -1,0 +1,12 @@
+{
+  "templateId": "operation-cancelled.v1",
+  "recipient": {
+    "email": "usuario@example.com"
+  },
+  "parameters": {
+    "operationName": "Reserva",
+    "reference": "REF-123",
+    "reason": "Horario bloqueado"
+  }
+}
+

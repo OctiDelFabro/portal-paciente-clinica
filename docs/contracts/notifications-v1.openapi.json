@@ -1,0 +1,850 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "Notificaciones - portal-paciente-clinica",
+    "version": "1.0.0",
+    "description": "Contrato inicial para la Entrega 1. Correos por tres plantillas predefinidas. El mock usa memoria y respuestas simuladas: no envia correos reales. Los recordatorios externos se solicitan al momento elegido por el consumidor; esta API no programa envios futuros."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8085",
+      "description": "Mock local. URL operativa publica pendiente para el siguiente hito."
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/v1/templates": {
+      "get": {
+        "operationId": "listTemplates",
+        "summary": "Consultar el catalogo de plantillas",
+        "responses": {
+          "200": {
+            "description": "Catalogo v1.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateCatalog"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Clave de API ausente o invalida.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limite de 60 solicitudes por minuto y consumidor.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Segundos de espera.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio real no disponible; reintentar con la misma clave de idempotencia. No se simula en este mock.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notifications": {
+      "post": {
+        "operationId": "createNotification",
+        "summary": "Aceptar una solicitud de correo por plantilla",
+        "description": "Una nueva solicitud valida recibe 202 y status=accepted. Idempotency-Key obligatoria por consumidor durante 24 h desde su primera aceptacion: mismos datos normalizados devuelven la respuesta original y el mismo ID; datos distintos devuelven 409. El replay no reinicia el envio ni extiende la ventana. Despues de 24 h puede crearse otra solicitud. Cuerpo maximo 16 KiB. Los campos desconocidos o tipos JSON incorrectos reciben 400; las restricciones de valores y parametros reciben 422.",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Request-ID",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationRequest"
+              },
+              "examples": {
+                "confirmation": {
+                  "value": {
+                    "templateId": "operation-confirmed.v1",
+                    "recipient": {
+                      "email": "usuario@example.com"
+                    },
+                    "parameters": {
+                      "operationName": "Reserva",
+                      "reference": "REF-123"
+                    }
+                  }
+                },
+                "cancellation": {
+                  "value": {
+                    "templateId": "operation-cancelled.v1",
+                    "recipient": {
+                      "email": "usuario@example.com"
+                    },
+                    "parameters": {
+                      "operationName": "Reserva",
+                      "reference": "REF-123",
+                      "reason": "Horario bloqueado"
+                    }
+                  }
+                },
+                "reminder": {
+                  "value": {
+                    "templateId": "operation-reminder.v1",
+                    "recipient": {
+                      "email": "usuario@example.com"
+                    },
+                    "parameters": {
+                      "operationName": "Reserva",
+                      "reference": "REF-123",
+                      "scheduledAt": "2026-10-10T15:00:00-03:00"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Solicitud aceptada; no acredita envio ni entrega. En un replay conserva la respuesta inicial.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Location": {
+                "description": "Ruta relativa para consultar el estado.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "true en una repeticion; false en una nueva solicitud.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true",
+                    "false"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Notification"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON invalido, tipos o campos desconocidos, o clave de idempotencia invalida.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Clave de API ausente o invalida.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La clave ya esta asociada a otros datos.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "El cuerpo supera 16 KiB.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Se requiere Content-Type application/json.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Plantilla, correo o parametros invalidos.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limite de 60 solicitudes por minuto y consumidor.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Segundos de espera.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio real no disponible; reintentar con la misma clave de idempotencia. No se simula en este mock.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/notifications/{id}": {
+      "get": {
+        "operationId": "getNotification",
+        "summary": "Consultar el resultado de una solicitud propia",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado actual. sent significa aceptado por el proveedor de correo, no leido ni entregado al destinatario. simulated=true indica que el resultado procede del mock.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Notification"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Clave de API ausente o invalida.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Solicitud inexistente o perteneciente a otro consumidor.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limite de 60 solicitudes por minuto y consumidor.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Segundos de espera.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[0-9]+$"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio real no disponible; reintentar con la misma clave de idempotencia. No se simula en este mock.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "health",
+        "summary": "Comprobar el mock local",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Mock disponible.",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Identificador de correlacion.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "status",
+                    "mode",
+                    "simulated"
+                  ],
+                  "properties": {
+                    "status": {
+                      "const": "ok"
+                    },
+                    "mode": {
+                      "const": "mock"
+                    },
+                    "simulated": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Clave distinta por consumidor; no incluir en frontend, repositorio ni logs. HTTPS obligatorio en el servicio real."
+      }
+    },
+    "schemas": {
+      "Recipient": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 254,
+            "description": "Una direccion sin nombre de presentacion."
+          }
+        }
+      },
+      "NotificationRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "templateId",
+              "recipient",
+              "parameters"
+            ],
+            "properties": {
+              "templateId": {
+                "type": "string",
+                "const": "operation-confirmed.v1"
+              },
+              "recipient": {
+                "$ref": "#/components/schemas/Recipient"
+              },
+              "parameters": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operationName",
+                  "reference"
+                ],
+                "properties": {
+                  "operationName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[^\\r\\n\\u0000]*\\S[^\\r\\n\\u0000]*$"
+                  },
+                  "reference": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[^\\r\\n\\u0000]*\\S[^\\r\\n\\u0000]*$"
+                  },
+                  "recipientName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[^\\r\\n\\u0000]*\\S[^\\r\\n\\u0000]*$"
+                  },
+                  "scheduledAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "maxLength": 35
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "templateId",
+              "recipient",
+              "parameters"
+            ],
+            "properties": {
+              "templateId": {
+                "type": "string",
+                "const": "operation-cancelled.v1"
+              },
+              "recipient": {
+                "$ref": "#/components/schemas/Recipient"
+              },
+              "parameters": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operationName",
+                  "reference"
+                ],
+                "properties": {
+                  "operationName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[^\\r\\n\\u0000]*\\S[^\\r\\n\\u0000]*$"
+                  },
+                  "reference": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[^\\r\\n\\u0000]*\\S[^\\r\\n\\u0000]*$"
+                  },
+                  "recipientName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[^\\r\\n\\u0000]*\\S[^\\r\\n\\u0000]*$"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^[^\\r\\n\\u0000]*\\S[^\\r\\n\\u0000]*$"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "templateId",
+              "recipient",
+              "parameters"
+            ],
+            "properties": {
+              "templateId": {
+                "type": "string",
+                "const": "operation-reminder.v1"
+              },
+              "recipient": {
+                "$ref": "#/components/schemas/Recipient"
+              },
+              "parameters": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operationName",
+                  "reference",
+                  "scheduledAt"
+                ],
+                "properties": {
+                  "operationName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[^\\r\\n\\u0000]*\\S[^\\r\\n\\u0000]*$"
+                  },
+                  "reference": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80,
+                    "pattern": "^[^\\r\\n\\u0000]*\\S[^\\r\\n\\u0000]*$"
+                  },
+                  "scheduledAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "maxLength": 35
+                  },
+                  "recipientName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[^\\r\\n\\u0000]*\\S[^\\r\\n\\u0000]*$"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Notification": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "templateId",
+          "createdAt",
+          "updatedAt",
+          "simulated"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "sent",
+              "failed"
+            ]
+          },
+          "templateId": {
+            "type": "string",
+            "enum": [
+              "operation-confirmed.v1",
+              "operation-cancelled.v1",
+              "operation-reminder.v1"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "simulated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TemplateCatalog": {
+        "type": "object",
+        "required": [
+          "templates"
+        ],
+        "properties": {
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Template"
+            }
+          }
+        }
+      },
+      "Template": {
+        "type": "object",
+        "required": [
+          "id",
+          "requiredParameters",
+          "optionalParameters",
+          "subject",
+          "body"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "requiredParameters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "optionalParameters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "UNAUTHORIZED",
+                  "RATE_LIMITED",
+                  "INVALID_IDEMPOTENCY_KEY",
+                  "INVALID_JSON",
+                  "VALIDATION_ERROR",
+                  "IDEMPOTENCY_CONFLICT",
+                  "PAYLOAD_TOO_LARGE",
+                  "UNSUPPORTED_MEDIA_TYPE",
+                  "NOT_FOUND",
+                  "METHOD_NOT_ALLOWED",
+                  "SERVICE_UNAVAILABLE"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
