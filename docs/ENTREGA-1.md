@@ -13,11 +13,11 @@ Dominio aprobado: portal paciente de una clínica. La integración a consumir si
 | Mock | Ejecutable Go en memoria, sin correo real, con validación e idempotencia concurrente. |
 | Estructura inicial de servicios y dependencias | Carpetas, código de arranque backend, base React/TypeScript y Compose inicial. |
 | D1, D8, D3 y D5 | Cuatro archivos independientes incluidos; D3 y D5 son versiones iniciales. |
-| Repositorio público accesible | Creado y verificado: https://github.com/OctiDelFabro/portal-paciente-clinica. Por ahora contiene el README inicial; falta publicar el contenido completo. |
+| Repositorio público accesible | Creado y verificado: https://github.com/OctiDelFabro/portal-paciente-clinica. Los 42 archivos de esta entrega están publicados en main. |
 
 ## Acciones para presentar
 1. Utilizar el repositorio público existente OctiDelFabro/portal-paciente-clinica.
-2. Subir el contenido de esta carpeta conservando la estructura. No subir .env ni .cache.
+2. Utilizar el contenido publicado en main, conservando su estructura. No subir .env ni .cache.
 3. Completar nombres de integrantes y comisión en README; el enlace del repositorio ya fue confirmado.
 4. Ejecutar el mock en la computadora de presentación y demostrar catálogo → POST 202 → GET de estado → replay con el mismo ID.
 5. Validar Docker y la instalación del frontend en un entorno operativo. Compose no acredita conexiones reales ni flujos clínicos.
