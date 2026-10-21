@@ -34,7 +34,7 @@ Se anuncian dos desafíos para incorporar al alcance (pendiente de confirmación
 - Sin agenda configurable ni bloqueos (RF-06/RF-07), reprogramación ni recordatorios.
 - D6, D7, D12 y D13 están decididos pero no implementados ni medidos.
 - El rate limit de la API pública es por instancia.
-- Los tests de integración (`-tags integration`) y `docker compose up` **no se ejecutaron en la sesión de desarrollo** porque Docker no estaba disponible. Hay que correrlos antes de presentar.
+- `mysql-users.sh` solo corre al crear el volumen de MySQL: si ya existía, ejecutar `docker compose down -v` antes de levantar.
 - `scripts/check_contract.py` falla de forma intermitente en Windows en el chequeo "limite de cuerpo" (el servidor corta la conexión antes de que llegue el 413). Ya ocurría en la Entrega 1; pendiente de corregir.
 
 ## Pendiente para la presentación final

@@ -51,4 +51,4 @@ Se necesitan migraciones MySQL y validación/versionado de documentos MongoDB. N
 | Inbox para eventos | `inbox` con `event_id` como clave primaria | test de integración con evento duplicado |
 | Estados separados para correo y aviso del portal | `notifications` (correo) y `portal_notices` (aviso), creados en la misma transacción | `repository.go` |
 
-Ajustes: el aislamiento es READ COMMITTED, porque la serialización la dan los bloqueos de recurso y no hace falta REPEATABLE READ; se agregó el reintento ante deadlock (hasta 3). Pendiente: MongoDB para Historia clínica, retención y respaldo.
+Ajustes: el aislamiento es READ COMMITTED, porque la serialización la dan los bloqueos de recurso y no hace falta REPEATABLE READ; se agregó el reintento ante deadlock (hasta 3). En Notificaciones, el test de integración mostró que REPEATABLE READ produce deadlocks (gap locks) con claves de idempotencia concurrentes; se usa READ COMMITTED y se reintenta ante 1062/1213. Pendiente: MongoDB para Historia clínica, retención y respaldo.

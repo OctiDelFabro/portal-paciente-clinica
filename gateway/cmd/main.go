@@ -103,6 +103,12 @@ func proxy(name, target, stripPrefix string) http.Handler {
 	}
 	rp := httputil.NewSingleHostReverseProxy(u)
 	rp.Transport = retryTransport{name: name, next: obs.Transport(base)}
+	// El middleware del gateway ya devuelve X-Correlation-ID; sin esto el proxy
+	// copiaria tambien el del servicio y el header saldria duplicado.
+	rp.ModifyResponse = func(resp *http.Response) error {
+		resp.Header.Del(obs.CorrelationHeader)
+		return nil
+	}
 	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
 		var ne net.Error
 		if errors.Is(e, context.DeadlineExceeded) || (errors.As(e, &ne) && ne.Timeout()) {
