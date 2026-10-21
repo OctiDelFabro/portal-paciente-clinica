@@ -70,6 +70,13 @@ func isDuplicate(err error) bool {
 	return errors.As(err, &me) && me.Number == 1062
 }
 
+// isRetryable cubre la clave duplicada de una solicitud concurrente y el
+// deadlock o timeout de bloqueo, en los que InnoDB ya revirtio la transaccion.
+func isRetryable(err error) bool {
+	var me *mysql.MySQLError
+	return errors.As(err, &me) && (me.Number == 1062 || me.Number == 1213 || me.Number == 1205)
+}
+
 func insertNotification(ctx context.Context, tx *sql.Tx, n Notification) error {
 	params, _ := json.Marshal(n.Params)
 	headers, _ := json.Marshal(n.TraceHeaders)
@@ -84,17 +91,20 @@ func insertNotification(ctx context.Context, tx *sql.Tx, n Notification) error {
 // clave primaria (consumer, idem_key) resuelve solicitudes concurrentes: la
 // perdedora vuelve a leer y devuelve la respuesta original o un conflicto.
 func (r *Repo) CreateIdempotent(ctx context.Context, key, fingerprint string, n Notification, ttl time.Duration) (Notification, bool, error) {
-	for attempt := 0; attempt < 3; attempt++ {
+	for attempt := 0; attempt < 5; attempt++ {
 		got, replayed, err := r.createOnce(ctx, key, fingerprint, n, ttl)
-		if !isDuplicate(err) {
+		if !isRetryable(err) {
 			return got, replayed, err
 		}
 	}
 	return Notification{}, false, errors.New("idempotency race not resolved")
 }
 
+// READ COMMITTED evita los gap locks: con REPEATABLE READ, dos SELECT FOR
+// UPDATE sobre una clave inexistente bloquean el mismo hueco y los INSERT
+// posteriores terminan en deadlock (error 1213, visto en el test de integracion).
 func (r *Repo) createOnce(ctx context.Context, key, fingerprint string, n Notification, ttl time.Duration) (Notification, bool, error) {
-	tx, err := r.DB.BeginTx(ctx, nil)
+	tx, err := r.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return Notification{}, false, err
 	}

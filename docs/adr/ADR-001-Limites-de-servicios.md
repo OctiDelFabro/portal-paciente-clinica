@@ -34,3 +34,10 @@ Se mantienen cinco microservicios de negocio y un gateway, con contratos y depen
 La publicación de eventos y el registro de reservas deben coordinarse para no perder avisos ni generar efectos duplicados. La estrategia de concurrencia y publicación fiable sigue pendiente de diseño concreto. La división inicial se validará durante la implementación; si cambia, el ADR anterior conservará su historia.
 Referencias del proyecto
 SPEC.md contiene el alcance y las reglas confirmadas. docs/ARCHITECTURE.md explica los componentes y flujos. ADR-008-Contrato-propio.md desarrolla la capacidad compartida. Los diagramas de contexto y contenedores deben actualizarse para reflejar esta decisión.
+
+## Validación Entrega 2
+**Resultado: límites confirmados, sin cambios.**
+- Turnos implementa reserva y cancelación con datos propios (`appointments`, `booking_locks`, `outbox`) y no lee bases ajenas. Necesitó médicos y pacientes, que se obtienen por el puerto `Directory` (hoy datos semilla, luego HTTP).
+- Notificaciones recibe solo identificadores en los eventos y resuelve contactos por su puerto `Contacts`, sin acceder a la base de Pacientes.
+- La separación permitió que una caída de RabbitMQ o del correo no afecte la reserva (ADR-010).
+- Pendiente de validar con implementación: Pacientes, Médicos e Historia clínica siguen como esqueletos.

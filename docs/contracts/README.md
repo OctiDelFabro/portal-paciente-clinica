@@ -1,6 +1,6 @@
 # Capacidad publicada: Notificaciones v1
-Contrato formal: [notifications-v1.openapi.json](notifications-v1.openapi.json), OpenAPI 3.1.1, versión de API 1.0.0.
-Estado: primera versión y mock local. URL operativa pública y proveedor de correo pendientes. El grupo consumidor aún no fue asignado.
+Contrato formal: [notifications-v1.openapi.json](notifications-v1.openapi.json), OpenAPI 3.1.1, versión de API **1.1.0** (cambio compatible respecto de 1.0.0, ver [ADR-008](../adr/ADR-008-Contrato-propio.md)).
+Estado: servicio real operativo en local (MySQL, envío asíncrono, correos capturados por Mailpit) y mock en memoria para pruebas sin dependencias. URL pública y proveedor de correo real pendientes. El grupo consumidor aún no fue asignado.
 
 ## Operaciones
 | Método y ruta | Uso |
@@ -8,7 +8,7 @@ Estado: primera versión y mock local. URL operativa pública y proveedor de cor
 | GET /v1/templates | Catálogo, parámetros y contenido fijo de las plantillas. |
 | POST /v1/notifications | Solicitar un correo; devuelve 202, ID, estado accepted y Location. |
 | GET /v1/notifications/{id} | Consultar una solicitud del mismo consumidor. |
-| GET /healthz | Estado del mock local; no requiere clave. |
+| GET /healthz | Estado; no requiere clave. `mode` es `mock` o `service`; el servicio real responde 503 sin almacenamiento. |
 
 Cada consumidor tendrá X-API-Key distinta. La clave queda en su microservicio, no en el frontend. HTTPS en el despliegue real. El consumidor llamará desde el servicio responsable del flujo; la URL pública del proveedor podrá pasar por su gateway. No compartir credenciales de RabbitMQ.
 
@@ -46,7 +46,7 @@ Límite inicial: 60 solicitudes por minuto por consumidor, contando operaciones 
 Los errores usan {"error":{"code":"…","message":"…"}}. X-Request-ID identifica solicitudes; no usar su texto como credencial.
 
 ## Ejecutar y probar
-Requiere Go 1.23 o posterior. Desde la raíz, en PowerShell:
+Servicio real: `docker compose up --build` y usar `http://127.0.0.1:8080/v1/...` con una clave de `NOTIF_API_KEYS`. Mock en memoria: requiere Go 1.26 o posterior. Desde la raíz, en PowerShell:
 ```powershell
 $env:MOCK_API_KEYS = 'grupo-demo:solo-demo-local'
 go run ./services/notifications/mock
@@ -65,6 +65,12 @@ Para simular fallo, detener el mock, definir $env:MOCK_RESULT = 'failed' y arran
 Tests: go test -v ./services/notifications/mock.
 Verificación HTTP separada: python scripts/check_contract.py (inicia un binario temporal y valida respuestas con el contrato).
 La clave de arriba es exclusivamente una muestra local, no una credencial real.
+
+## Historial de versiones
+| Versión | Cambio |
+|---|---|
+| 1.1.0 | `/healthz` admite `mode: service` y `simulated: false`; se documenta 503. Servidor del gateway local. Operaciones de correo sin cambios. |
+| 1.0.0 | Versión inicial con mock (Entrega 1). |
 
 ## Versionado y limitaciones
 /v1 identifica la versión mayor; las plantillas tienen sufijo .v1. Campos obligatorios nuevos, eliminación de operaciones/plantillas o cambios de significado exigen v2 y guía de migración. Las extensiones compatibles mantienen v1 y suben la versión menor; los consumidores deben tolerar parámetros opcionales de respuesta nuevos.

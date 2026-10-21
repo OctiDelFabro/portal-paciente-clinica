@@ -1,5 +1,5 @@
 # portal-paciente-clinica — Alcance y requisitos
-SPEC.md · Versión 0.2 · Borrador de la Entrega 1
+SPEC.md · Versión 0.3 · Entrega 2
 Esta versión registra las decisiones funcionales confirmadas por el grupo. Los puntos todavía no acordados se identifican expresamente como pendientes o propuestas por validar. El documento describe el sistema a construir; no acredita funcionalidades implementadas.
 ## 1. Dominio y objetivo
 Dominio aprobado: portal paciente de una única clínica. El sistema permitirá buscar médicos y especialidades, gestionar turnos propios y de menores a cargo, organizar la agenda médica y consultar o registrar información de la historia clínica según el rol y la relación con el paciente.
@@ -53,4 +53,13 @@ El frontend utilizará React y TypeScript. La arquitectura se documenta en docs/
 El proyecto y el repositorio se llaman portal-paciente-clinica. El repositorio público está disponible en https://github.com/OctiDelFabro/portal-paciente-clinica. Esta especificación está publicada en main junto con el código y deberá mantenerse actualizada. Los puntos pendientes anteriores se resolverán por etapas antes de considerar cerrado el diseño correspondiente.
 ## 6. Estado de este paquete
 Se incorporan las respuestas posteriores a la última versión guardada en Drive y se adjuntan contrato, mock y estructura inicial. Este archivo no acredita funcionalidades clínicas implementadas. El contenido completo de la primera entrega está publicado en main del repositorio público.
+
+## 7. Estado de implementación (Entrega 2)
+| Requisito | Estado |
+|---|---|
+| RF-02 Reserva (24 h, sin superposiciones, concurrencia) | Implementado en Turnos. Agenda y bloqueos todavía no; los médicos vienen de datos semilla. |
+| RF-03 Cancelación (24 h) | Implementado en Turnos. |
+| RF-12 Notificaciones (correo por evento, aviso del portal, menores → responsable, API pública) | Implementado para reserva y cancelación; recordatorios pendientes. |
+| RF-13 Habilitación por recepción | Respetada al reservar: un paciente no habilitado recibe 403 `PATIENT_NOT_ENABLED`. El registro todavía no está implementado. |
+| RF-01, RF-04 a RF-11 | Pendientes para la presentación final. |
 

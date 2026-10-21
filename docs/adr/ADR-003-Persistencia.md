@@ -41,3 +41,14 @@ Se necesitan migraciones MySQL y validación/versionado de documentos MongoDB. N
 - [MongoDB: modelado según patrones de acceso](https://www.mongodb.com/docs/manual/data-modeling/).
 - Alcance: ../SPEC.md. Límites: ADR-001-Limites-de-servicios.md.
 
+## Validación Entrega 2
+**Resultado: decisiones confirmadas e implementadas para Turnos y Notificaciones.**
+| Propuesta | Implementación | Evidencia |
+|---|---|---|
+| Filas de recurso por médico y paciente bloqueadas en orden estable + intersección de intervalos | `booking_locks` con `SELECT … FOR UPDATE` en orden alfabético de claves; intervalos semiabiertos | `mysqlstore/store.go`, `domain/appointment_test.go`, test de integración con 15 reservas concurrentes solapadas |
+| Usuario y base por servicio | `infra/mysql-users.sh` crea `turnos` y `notificaciones` con permisos solo sobre su base | `compose.yaml` |
+| Notificaciones registra antes del 202; unicidad por consumidor y clave con vencimiento | `idempotency_keys` con clave primaria (consumer, idem_key) y `expires_at` | test de integración con 30 POST concurrentes |
+| Inbox para eventos | `inbox` con `event_id` como clave primaria | test de integración con evento duplicado |
+| Estados separados para correo y aviso del portal | `notifications` (correo) y `portal_notices` (aviso), creados en la misma transacción | `repository.go` |
+
+Ajustes: el aislamiento es READ COMMITTED, porque la serialización la dan los bloqueos de recurso y no hace falta REPEATABLE READ; se agregó el reintento ante deadlock (hasta 3). En Notificaciones, el test de integración mostró que REPEATABLE READ produce deadlocks (gap locks) con claves de idempotencia concurrentes; se usa READ COMMITTED y se reintenta ante 1062/1213. Pendiente: MongoDB para Historia clínica, retención y respaldo.

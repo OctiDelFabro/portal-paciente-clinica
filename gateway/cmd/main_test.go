@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"portal-paciente-clinica/internal/platform/obs"
 )
 
 func upstream(status int, calls *atomic.Int32, delay time.Duration) *httptest.Server {
@@ -48,6 +50,22 @@ func TestPrefixIsStrippedForTurnos(t *testing.T) {
 	proxy("turnos", srv.URL, "/api/turnos").ServeHTTP(rec, httptest.NewRequest("GET", "/api/turnos/appointments/9", nil))
 	if got := rec.Header().Get("X-Seen-Path"); got != "/appointments/9" {
 		t.Fatalf("upstream saw %q", got)
+	}
+}
+
+func TestCorrelationHeaderIsNotDuplicated(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Correlation-ID", r.Header.Get("X-Correlation-ID"))
+	}))
+	defer srv.Close()
+	mux := http.NewServeMux()
+	mux.Handle("/api/turnos/", proxy("turnos", srv.URL, "/api/turnos"))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/turnos/appointments/1", nil)
+	req.Header.Set("X-Correlation-ID", "corr-1")
+	obs.Middleware("gateway", mux).ServeHTTP(rec, req)
+	if got := rec.Header().Values("X-Correlation-ID"); len(got) != 1 || got[0] != "corr-1" {
+		t.Fatalf("want a single corr-1 header, got %v", got)
 	}
 }
 
