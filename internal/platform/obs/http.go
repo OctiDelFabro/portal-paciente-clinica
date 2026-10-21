@@ -77,7 +77,12 @@ func MetricsHandler() http.Handler { return promhttp.Handler() }
 
 // Client devuelve un cliente HTTP que propaga traceparent y X-Correlation-ID.
 func Client(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: correlationTransport{otelhttp.NewTransport(http.DefaultTransport)}}
+	return &http.Client{Timeout: timeout, Transport: Transport(http.DefaultTransport)}
+}
+
+// Transport envuelve base con span de cliente, traceparent y X-Correlation-ID.
+func Transport(base http.RoundTripper) http.RoundTripper {
+	return correlationTransport{otelhttp.NewTransport(base)}
 }
 
 type correlationTransport struct{ next http.RoundTripper }
