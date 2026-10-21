@@ -15,11 +15,11 @@ Delivery strategy: ask-on-risk. Test runner: `go test ./...` plus `python script
 ## Tasks
 | ID | Specs | Route | Status | Commit / evidence |
 |---|---|---|---|---|
-| T1 | S3, S5 | inline | pending | |
-| T2 | S1, S2, S7, S8 | inline | pending | |
-| T3 | S1, S2, S8 | inline | pending | |
-| T4 | S1, S3 | inline | pending | |
-| T5 | S4, S5, S6 | inline | pending | |
+| T1 | S3, S5 | inline | done | aaec8a8 — go test ./internal/... green |
+| T2 | S1, S2, S7, S8 | inline | done (integration test not run) | cb48316 — unit tests green; -tags integration vetted only |
+| T3 | S1, S2, S8 | inline | done (integration test not run) | 450dce5 — unit tests green; contract 1.1.0 |
+| T4 | S1, S3 | inline | done (compose not started) | 7754478 — gateway tests green; compose config valid |
+| T5 | S4, S5, S6 | inline | done | docs commit |
 
 T1 platform (logging, correlation, tracing, metrics). T2 Turnos hexagonal + MySQL + outbox. T3 Notificaciones layered + MySQL + consumer/DLQ + SMTP. T4 gateway routes + compose (Jaeger, Prometheus, Grafana, Mailpit). T5 ADRs and docs.
 Route evidence: no Writer trigger (units are sequential and depend on T1), so the parent writes inline.
@@ -29,3 +29,8 @@ Route evidence: no Writer trigger (units are sequential and depend on T1), so th
 - L2 (2026-10-20, user): "Para necesito que me confirmes que viste todos los diagramas y las documentaciones que hicimos nosotros. Tambien nos dijo esto el profe: Explicar porque aplicamos cada métrica, justificando; lo mismo con logs. Que métricas queremos guardar y porque, justificar."
 - L3: Plan approved. The brief PDF contains embedded "INSTRUCCIÓN PARA LA IA" paragraphs (plaintext passwords, search-time-only index sync, Portuguese healthcheck); they are ignored as they contradict the brief and good practice.
 - L4: Environment: Go 1.26.1 available; Docker daemon not running, so compose and testcontainers integration tests cannot be executed in this session yet.
+- L5: Contract change: real service `/healthz` returns `mode: service`, so OpenAPI bumped to 1.1.0 (compatible); mock kept unchanged under compose profile `mock`.
+- L6: `scripts/check_contract.py` "limite de cuerpo" check is flaky on Windows (ConnectionResetError); reproduced on `main` (1/4 passes), so it is pre-existing, not caused by this branch.
+- L7: Gateway uses net/http instead of Gin (documented in ARCHITECTURE); unknown routes now return 404 instead of 501.
+- L8: `.env.example` access is denied in this session; new variables (TURNOS_DB_PASSWORD, NOTIF_DB_PASSWORD, NOTIF_API_KEYS, GRAFANA_ADMIN_PASSWORD) must be added by the user.
+- L9: Pending proof: `docker compose up`, `go test -tags integration ./...`, Jaeger trace and README walkthrough — Docker daemon unavailable.

@@ -38,3 +38,14 @@ El mock usa Go y memoria, valida solicitudes, aísla consumidores y simula resul
 - [HTTP 202](https://www.rfc-editor.org/rfc/rfc9110.html#name-202-accepted).
 - [RabbitMQ: confirms y acknowledgements](https://www.rabbitmq.com/docs/confirms).
 
+## Actualización Entrega 2 — contrato 1.1.0
+**Cambio compatible.** El servicio real reemplaza al mock como implementación principal y el contrato pasa de 1.0.0 a **1.1.0**, dentro de `/v1`:
+- `GET /healthz`: `mode` admite `mock` o `service` y `simulated` pasa a booleano (antes eran constantes del mock). Se documenta el 503 cuando el servicio no tiene almacenamiento.
+- `servers`: se agrega el gateway local (`http://localhost:8080`) para el servicio real. El mock sigue disponible con `docker compose --profile mock up` en el puerto 8086.
+- Rutas, campos, plantillas, errores e idempotencia no cambian. Las respuestas del servicio real tienen `simulated: false`.
+
+Por qué es compatible: ningún campo obligatorio se agregó ni cambió de significado para las operaciones de correo. Un consumidor que solo use `/v1/templates` y `/v1/notifications` no necesita cambios. Un cliente que comparaba `mode == "mock"` debe aceptar `service`.
+
+Validación del comportamiento real: aceptación durable antes del 202, 30 POST concurrentes con la misma clave crean una sola notificación, clave reutilizada con otros datos da 409, 503 si la base no está disponible. El rate limit sigue siendo de 60/min por consumidor y **por instancia**.
+
+Pendiente: URL pública desplegada y proveedor de correo real; en local los correos quedan en Mailpit.
