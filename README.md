@@ -62,6 +62,25 @@ API de Turnos: `POST /api/turnos/appointments`, `GET /api/turnos/appointments/{i
 El mock en memoria sigue disponible para el grupo consumidor con `docker compose --profile mock up notifications-mock` (puerto 8086). Pacientes, Médicos e Historia clínica siguen como esqueletos con `/healthz`. Frontend: ver `frontend/README.md`.
 No existe despliegue público verificado ni URL de producción.
 
+### Si cambiás contraseñas del `.env`
+Las contraseñas se aplican cuando se **crean** los contenedores y volúmenes, no cada vez que se levantan:
+- **MySQL** crea los usuarios `turnos` y `notificaciones` solo al inicializar un volumen vacío (`infra/mysql-users.sh`). Con un volumen existente, una contraseña nueva produce `Access denied for user 'notificaciones'`.
+- **RabbitMQ** toma `RABBITMQ_PASSWORD` al crear su contenedor. Si se recrea con otra contraseña, los servicios que siguen corriendo con la anterior reciben `username or password not allowed`.
+
+Después de cambiar cualquier valor del `.env`, arrancar de cero (borra los datos locales de prueba):
+```powershell
+docker compose down -v
+docker compose up --build -d
+```
+
+### Problemas frecuentes
+| Síntoma | Causa | Solución |
+|---|---|---|
+| `notifications` en estado `Exited (1)` y log `NOTIF_API_KEYS=consumer:key is required` | `NOTIF_API_KEYS` sin el formato `consumidor:clave` | Corregir el `.env` (ej. `grupo-demo:clave-demo`) y `docker compose up -d notifications` |
+| `notifications` en `Exited (1)` y log `Access denied for user 'notificaciones'` | Contraseña de MySQL cambiada con un volumen existente | `docker compose down -v` y volver a levantar |
+| La reserva responde 201 pero no llega el correo a Mailpit | Notificaciones caído o sin cola: el evento queda pendiente en la outbox de Turnos | Ver `docker compose ps` y `docker compose logs notifications`. Al levantarlo, el correo llega solo, sin reservar de nuevo |
+| No se puede entrar a RabbitMQ (http://localhost:15672) | El usuario es `localuser` (no `guest`) y la contraseña es `RABBITMQ_PASSWORD` del momento en que se creó el contenedor | Usar esas credenciales, o recrear con `docker compose up -d --force-recreate rabbitmq turnos notifications` |
+
 ## Trabajo en equipo
 Propuesta inicial: main para versiones revisadas; ramas feature/... y PR con revisión de otro integrante antes de integrar. Adjuntar pruebas pertinentes. El grupo deberá acordar responsables y aplicar esta estrategia al crear el repositorio público.
 No subir claves reales, datos de pacientes ni .env. Las muestras usan dominios example.com.
