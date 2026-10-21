@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 5s
+scrape_configs:
+  - job_name: gateway
+    static_configs: [{targets: ["gateway:8080"]}]
+  - job_name: turnos
+    static_configs: [{targets: ["turnos:8081"]}]
+  - job_name: notifications
+    static_configs: [{targets: ["notifications:8085"]}]

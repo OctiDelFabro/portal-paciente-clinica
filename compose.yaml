@@ -1,13 +1,9 @@
 name: portal-paciente-clinica
+# Puesta en marcha: copiar .env.example a .env, completar valores y ejecutar
+# docker compose up --build. Las variables requeridas se listan en README.md.
+x-otel: &otel
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
 services:
-  notifications-mock:
-    build:
-      context: .
-      dockerfile: infra/Dockerfile.backend
-    environment:
-      MOCK_API_KEYS: ${MOCK_API_KEYS:?Definir MOCK_API_KEYS}
-      MOCK_ADDR: 0.0.0.0:8085
-    ports: ["127.0.0.1:8085:8085"]
   gateway:
     build:
       context: .
@@ -15,9 +11,11 @@ services:
       args:
         SERVICE_PATH: ./gateway/cmd
     environment:
+      <<: *otel
       HTTP_ADDR: 0.0.0.0:8080
-      NOTIFICATIONS_URL: http://notifications-mock:8085
-    depends_on: [notifications-mock]
+      TURNOS_URL: http://turnos:8081
+      NOTIFICATIONS_URL: http://notifications:8085
+    depends_on: [turnos, notifications]
     ports: ["127.0.0.1:8080:8080"]
   turnos:
     build:
@@ -26,8 +24,42 @@ services:
       args:
         SERVICE_PATH: ./services/turnos/cmd
     environment:
+      <<: *otel
       HTTP_ADDR: 0.0.0.0:8081
+      TURNOS_DB_DSN: turnos:${TURNOS_DB_PASSWORD:?Definir TURNOS_DB_PASSWORD}@tcp(mysql:3306)/turnos
+      RABBITMQ_URL: amqp://localuser:${RABBITMQ_PASSWORD:?Definir RABBITMQ_PASSWORD}@rabbitmq:5672/
+    depends_on:
+      mysql: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
     ports: ["127.0.0.1:8081:8081"]
+  notifications:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+      args:
+        SERVICE_PATH: ./services/notifications/cmd
+    environment:
+      <<: *otel
+      HTTP_ADDR: 0.0.0.0:8085
+      NOTIF_API_KEYS: ${NOTIF_API_KEYS:?Definir NOTIF_API_KEYS (consumidor:clave)}
+      NOTIF_DB_DSN: notificaciones:${NOTIF_DB_PASSWORD:?Definir NOTIF_DB_PASSWORD}@tcp(mysql:3306)/notificaciones
+      RABBITMQ_URL: amqp://localuser:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      SMTP_ADDR: mailpit:1025
+    depends_on:
+      mysql: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      mailpit: {condition: service_started}
+    ports: ["127.0.0.1:8085:8085"]
+  notifications-mock:
+    # Mock en memoria para que el grupo consumidor pruebe sin dependencias: docker compose --profile mock up
+    profiles: [mock]
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+    environment:
+      MOCK_API_KEYS: ${MOCK_API_KEYS:?Definir MOCK_API_KEYS}
+      MOCK_ADDR: 0.0.0.0:8085
+    ports: ["127.0.0.1:8086:8085"]
   pacientes:
     build:
       context: .
@@ -59,9 +91,16 @@ services:
     image: mysql:8.4
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Definir MYSQL_ROOT_PASSWORD}
+      TURNOS_DB_PASSWORD: ${TURNOS_DB_PASSWORD}
+      NOTIF_DB_PASSWORD: ${NOTIF_DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      retries: 30
     volumes:
       - mysql-data:/var/lib/mysql
       - ./infra/mysql-init.sql:/docker-entrypoint-initdb.d/01-databases.sql:ro
+      - ./infra/mysql-users.sh:/docker-entrypoint-initdb.d/02-users.sh:ro
   mongodb:
     image: mongo:8.0
     environment:
@@ -72,7 +111,12 @@ services:
     image: rabbitmq:4.1-management
     environment:
       RABBITMQ_DEFAULT_USER: localuser
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Definir RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      retries: 30
+    ports: ["127.0.0.1:15672:15672"]
   redis:
     image: redis:7.4-alpine
   opensearch:
@@ -85,8 +129,31 @@ services:
     ulimits:
       memlock: {soft: -1, hard: -1}
     volumes: [opensearch-data:/usr/share/opensearch/data]
+  mailpit:
+    # Captura los correos en local; UI en http://localhost:8025. No envia a destinatarios reales.
+    image: axllent/mailpit:v1.27
+    ports: ["127.0.0.1:8025:8025"]
+  jaeger:
+    # Recibe trazas OTLP/HTTP en 4318; UI en http://localhost:16686.
+    image: jaegertracing/jaeger:2.9.0
+    ports: ["127.0.0.1:16686:16686"]
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    volumes: [./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro]
+    ports: ["127.0.0.1:9090:9090"]
+  grafana:
+    image: grafana/grafana:12.1.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Definir GRAFANA_ADMIN_PASSWORD}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/portal-overview.json
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus]
+    ports: ["127.0.0.1:3000:3000"]
 volumes:
   mysql-data:
   mongo-data:
   opensearch-data:
-
