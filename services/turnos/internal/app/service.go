@@ -28,6 +28,7 @@ var (
 type Directory interface {
 	Doctor(ctx context.Context, id string) (domain.Doctor, error)
 	Patient(ctx context.Context, id string) (domain.Patient, error)
+	Doctors(ctx context.Context) ([]domain.Doctor, error)
 }
 
 // OutboxMessage es un evento pendiente de publicar, guardado en la misma
@@ -48,11 +49,16 @@ type Tx interface {
 	Insert(ctx context.Context, a domain.Appointment) error
 	Update(ctx context.Context, a domain.Appointment) error
 	AppendOutbox(ctx context.Context, m OutboxMessage) error
+	FindPartnerBooking(ctx context.Context, consumer, key string) (PartnerBooking, error)
+	InsertPartnerBooking(ctx context.Context, pb PartnerBooking) error
 }
 
 type Store interface {
 	InTx(ctx context.Context, fn func(Tx) error) error
 	Get(ctx context.Context, id string) (domain.Appointment, error)
+	PartnerBookingByKey(ctx context.Context, consumer, key string) (PartnerBooking, error)
+	PartnerBookingOf(ctx context.Context, appointmentID string) (PartnerBooking, error)
+	PartnerUsage(ctx context.Context, consumer string, from, to time.Time) ([]UsageItem, error)
 }
 
 type Service struct {
@@ -60,6 +66,7 @@ type Service struct {
 	Directory Directory
 	Now       func() time.Time
 	NewID     func() string
+	Price     Pricing
 }
 
 func DoctorKey(id string) string  { return "doctor:" + id }
@@ -68,18 +75,46 @@ func PatientKey(id string) string { return "patient:" + id }
 // Book reserva un turno: valida actores, bloquea medico y paciente, comprueba
 // superposiciones y registra turno y evento en una unica transaccion.
 func (s *Service) Book(ctx context.Context, patientID, doctorID string, startAt time.Time) (domain.Appointment, error) {
+	a, _, err := s.book(ctx, patientID, doctorID, startAt, nil)
+	return a, err
+}
+
+// book es la reserva comun. Con partner, la clave de idempotencia se bloquea y
+// se vuelve a comprobar dentro de la transaccion: si otra solicitud con la
+// misma clave gano, se devuelve su turno (replayed) en lugar de crear otro.
+func (s *Service) book(ctx context.Context, patientID, doctorID string, startAt time.Time, partner *PartnerBooking) (domain.Appointment, bool, error) {
 	doctor, err := s.Directory.Doctor(ctx, doctorID)
 	if err != nil {
-		return domain.Appointment{}, err
+		return domain.Appointment{}, false, err
 	}
 	patient, err := s.Directory.Patient(ctx, patientID)
 	if err != nil {
-		return domain.Appointment{}, err
+		return domain.Appointment{}, false, err
 	}
 	var booked domain.Appointment
+	var replayed bool
 	err = s.Store.InTx(ctx, func(tx Tx) error {
-		if err := tx.LockResources(ctx, DoctorKey(doctorID), PatientKey(patientID)); err != nil {
+		replayed = false
+		keys := []string{DoctorKey(doctorID), PatientKey(patientID)}
+		if partner != nil {
+			keys = append(keys, IdempotencyLockKey(partner.Consumer, partner.IdempotencyKey))
+		}
+		if err := tx.LockResources(ctx, keys...); err != nil {
 			return err
+		}
+		if partner != nil {
+			prev, err := tx.FindPartnerBooking(ctx, partner.Consumer, partner.IdempotencyKey)
+			switch {
+			case err == nil:
+				if prev.Fingerprint != partner.Fingerprint {
+					return ErrIdempotencyConflict
+				}
+				booked, err = tx.GetForUpdate(ctx, prev.AppointmentID)
+				replayed = err == nil
+				return err
+			case !errors.Is(err, ErrNotFound):
+				return err
+			}
 		}
 		end := startAt.Add(doctor.Duration)
 		existing, err := tx.FindActiveOverlapping(ctx, doctorID, patientID, startAt, end)
@@ -93,14 +128,22 @@ func (s *Service) Book(ctx context.Context, patientID, doctorID string, startAt 
 		if err := tx.Insert(ctx, booked); err != nil {
 			return err
 		}
+		if partner != nil {
+			partner.AppointmentID, partner.BookedAt = booked.ID, s.Now().UTC()
+			if err := tx.InsertPartnerBooking(ctx, *partner); err != nil {
+				return err
+			}
+		}
 		return tx.AppendOutbox(ctx, s.event(ctx, messaging.RoutingBooked, booked))
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "appointment rejected", "event", "appointment.rejected", "reason", RejectReason(err), "doctor_id", doctorID)
-		return domain.Appointment{}, err
+		return domain.Appointment{}, false, err
 	}
-	slog.InfoContext(ctx, "appointment booked", "event", "appointment.booked", "appointment_id", booked.ID, "doctor_id", doctorID)
-	return booked, nil
+	if !replayed {
+		slog.InfoContext(ctx, "appointment booked", "event", "appointment.booked", "appointment_id", booked.ID, "doctor_id", doctorID)
+	}
+	return booked, replayed, nil
 }
 
 // Cancel cancela un turno respetando la anticipacion minima.
@@ -148,6 +191,8 @@ func RejectReason(err error) string {
 		return "patient_not_enabled"
 	case errors.Is(err, domain.ErrAlreadyCancelled):
 		return "already_cancelled"
+	case errors.Is(err, ErrIdempotencyConflict):
+		return "idempotency_conflict"
 	case errors.Is(err, ErrUnknownDoctor), errors.Is(err, ErrUnknownPatient), errors.Is(err, ErrNotFound):
 		return "not_found"
 	default:

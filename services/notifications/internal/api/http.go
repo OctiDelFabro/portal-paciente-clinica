@@ -4,8 +4,6 @@ package api
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,12 +12,12 @@ import (
 	"mime"
 	"net/http"
 	"regexp"
-	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"portal-paciente-clinica/internal/platform/apikey"
 	"portal-paciente-clinica/internal/platform/obs"
 	"portal-paciente-clinica/services/notifications/internal/repository"
 	"portal-paciente-clinica/services/notifications/internal/service"
@@ -46,23 +44,17 @@ func toDTO(n repository.Notification) notificationDTO {
 	return notificationDTO{n.ID, n.Status, n.TemplateID, n.CreatedAt.Format(time.RFC3339Nano), n.UpdatedAt.Format(time.RFC3339Nano), false}
 }
 
-type window struct {
-	start time.Time
-	count int
-}
-
 type HTTP struct {
 	Service *service.Service
 	Keys    map[string]string // consumidor -> clave, desde configuracion
 	Rate    int
 	Health  func() error
 
-	mu      sync.Mutex
-	windows map[string]window
+	limiter *apikey.Limiter
 }
 
 func (h *HTTP) Register(mux *http.ServeMux) {
-	h.windows = map[string]window{}
+	h.limiter = &apikey.Limiter{Rate: h.Rate}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := h.Health(); err != nil {
 			sendError(w, 503, "SERVICE_UNAVAILABLE", "Almacenamiento no disponible.")
@@ -93,34 +85,6 @@ func (h *HTTP) Register(mux *http.ServeMux) {
 	}
 }
 
-func (h *HTTP) authenticate(key string) string {
-	sum := sha256.Sum256([]byte(key))
-	for owner, expected := range h.Keys {
-		target := sha256.Sum256([]byte(expected))
-		if subtle.ConstantTimeCompare(sum[:], target[:]) == 1 {
-			return owner
-		}
-	}
-	return ""
-}
-
-// allow aplica 60 solicitudes por minuto por consumidor. El contador vive en
-// memoria de cada instancia: con varias replicas el limite es por replica.
-func (h *HTTP) allow(owner string, now time.Time) (bool, int) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	win := h.windows[owner]
-	if win.start.IsZero() || !now.Before(win.start.Add(time.Minute)) {
-		win = window{start: now}
-	}
-	if h.Rate > 0 && win.count >= h.Rate {
-		return false, int(win.start.Add(time.Minute).Sub(now).Seconds()) + 1
-	}
-	win.count++
-	h.windows[owner] = win
-	return true, 0
-}
-
 func (h *HTTP) auth(next func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		requestID := r.Header.Get("X-Request-ID")
@@ -128,13 +92,13 @@ func (h *HTTP) auth(next func(http.ResponseWriter, *http.Request, string)) http.
 			requestID = obs.NewID()
 		}
 		w.Header().Set("X-Request-ID", requestID)
-		consumer := h.authenticate(r.Header.Get("X-API-Key"))
+		consumer := apikey.Owner(h.Keys, r.Header.Get("X-API-Key"))
 		if consumer == "" {
 			requests.WithLabelValues("unknown", "", "unauthorized").Inc()
 			sendError(w, 401, "UNAUTHORIZED", "Clave de API ausente o invalida.")
 			return
 		}
-		if ok, wait := h.allow(consumer, time.Now()); !ok {
+		if ok, wait := h.limiter.Allow(consumer, time.Now()); !ok {
 			requests.WithLabelValues(consumer, "", "rate_limited").Inc()
 			w.Header().Set("Retry-After", fmt.Sprint(wait))
 			sendError(w, 429, "RATE_LIMITED", "Limite de solicitudes excedido.")

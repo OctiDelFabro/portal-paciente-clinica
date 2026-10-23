@@ -17,9 +17,10 @@ import (
 // memStore serializa las transacciones con un mutex, igual que el bloqueo de
 // recursos de MySQL lo hace para un mismo medico o paciente.
 type memStore struct {
-	mu     sync.Mutex
-	rows   map[string]domain.Appointment
-	outbox []OutboxMessage
+	mu       sync.Mutex
+	rows     map[string]domain.Appointment
+	outbox   []OutboxMessage
+	partners map[string]PartnerBooking // por appointment ID
 }
 
 type memTx struct{ s *memStore }
@@ -31,9 +32,13 @@ func (s *memStore) InTx(ctx context.Context, fn func(Tx) error) error {
 	for k, v := range s.rows {
 		snapshot[k] = v
 	}
+	partners := map[string]PartnerBooking{}
+	for k, v := range s.partners {
+		partners[k] = v
+	}
 	outboxLen := len(s.outbox)
 	if err := fn(memTx{s}); err != nil {
-		s.rows, s.outbox = snapshot, s.outbox[:outboxLen]
+		s.rows, s.outbox, s.partners = snapshot, s.outbox[:outboxLen], partners
 		return err
 	}
 	return nil
@@ -79,6 +84,9 @@ func (seedDirectory) Doctor(_ context.Context, id string) (domain.Doctor, error)
 	}
 	return domain.Doctor{ID: id, Duration: 30 * time.Minute}, nil
 }
+func (seedDirectory) Doctors(context.Context) ([]domain.Doctor, error) {
+	return []domain.Doctor{{ID: "d-1", Duration: 30 * time.Minute}}, nil
+}
 func (seedDirectory) Patient(_ context.Context, id string) (domain.Patient, error) {
 	return domain.Patient{ID: id, Enabled: true}, nil
 }
@@ -86,7 +94,7 @@ func (seedDirectory) Patient(_ context.Context, id string) (domain.Patient, erro
 var fixedNow = time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 
 func newService() (*Service, *memStore) {
-	store := &memStore{rows: map[string]domain.Appointment{}}
+	store := &memStore{rows: map[string]domain.Appointment{}, partners: map[string]PartnerBooking{}}
 	var seq atomic.Int64
 	return &Service{Store: store, Directory: seedDirectory{}, Now: func() time.Time { return fixedNow },
 		NewID: func() string { return fmt.Sprintf("id-%d", seq.Add(1)) }}, store

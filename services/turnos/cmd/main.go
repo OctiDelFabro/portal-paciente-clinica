@@ -8,9 +8,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
+	"strconv"
 	"syscall"
 	"time"
 
+	"portal-paciente-clinica/internal/platform/apikey"
 	"portal-paciente-clinica/internal/platform/obs"
 	"portal-paciente-clinica/services/turnos/internal/adapters/directory"
 	"portal-paciente-clinica/services/turnos/internal/adapters/httpapi"
@@ -24,6 +27,23 @@ func env(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// partnerConfig lee la capacidad publicada (ADR-008). Sin claves la API
+// responde 401 a todos; un precio, moneda o limite invalido impide iniciar.
+func partnerConfig() (map[string]string, app.Pricing, int) {
+	keys := apikey.Parse(os.Getenv("TURNOS_PARTNER_KEYS"))
+	if len(keys) == 0 {
+		slog.Warn("TURNOS_PARTNER_KEYS not set: partner API rejects every request", "event", "partner.disabled")
+	}
+	cents, err := strconv.ParseInt(env("TURNOS_PARTNER_PRICE_CENTS", "2500000"), 10, 64)
+	currency := env("TURNOS_PARTNER_CURRENCY", "ARS")
+	rate, rateErr := strconv.Atoi(env("TURNOS_PARTNER_RATE", "60"))
+	if err != nil || cents < 0 || !regexp.MustCompile(`^[A-Z]{3}$`).MatchString(currency) || rateErr != nil || rate < 1 {
+		slog.Error("invalid TURNOS_PARTNER_PRICE_CENTS, TURNOS_PARTNER_CURRENCY or TURNOS_PARTNER_RATE")
+		os.Exit(1)
+	}
+	return keys, app.Pricing{Cents: cents, Currency: currency}, rate
 }
 
 func main() {
@@ -60,9 +80,11 @@ func main() {
 	relay := &outbox.Relay{DB: store.DB, URL: env("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"), Interval: 500 * time.Millisecond}
 	go relay.Run(ctx)
 
-	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: time.Now, NewID: obs.NewID}
+	keys, price, rate := partnerConfig()
+	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: time.Now, NewID: obs.NewID, Price: price}
 	mux := http.NewServeMux()
 	httpapi.Register(mux, svc)
+	(&httpapi.Partner{UseCases: svc, Keys: keys, Limiter: &apikey.Limiter{Rate: rate}, Price: price, Now: time.Now}).Register(mux)
 	mux.Handle("GET /metrics", obs.MetricsHandler())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		status, code := "ok", 200

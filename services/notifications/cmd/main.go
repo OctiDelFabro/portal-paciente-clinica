@@ -8,10 +8,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
+
 	"syscall"
 	"time"
 
+	"portal-paciente-clinica/internal/platform/apikey"
 	"portal-paciente-clinica/internal/platform/obs"
 	"portal-paciente-clinica/services/notifications/internal/api"
 	"portal-paciente-clinica/services/notifications/internal/contacts"
@@ -42,13 +43,7 @@ func main() {
 	}
 	defer shutdown(context.Background())
 
-	keys := map[string]string{}
-	for _, item := range strings.Split(os.Getenv("NOTIF_API_KEYS"), ",") {
-		parts := strings.SplitN(strings.TrimSpace(item), ":", 2)
-		if len(parts) == 2 && parts[0] != "" && parts[1] != "" && parts[0] != service.PortalConsumer {
-			keys[parts[0]] = parts[1]
-		}
-	}
+	keys := apikey.Parse(os.Getenv("NOTIF_API_KEYS"), service.PortalConsumer)
 	if len(keys) == 0 {
 		slog.Error("NOTIF_API_KEYS=consumer:key is required")
 		os.Exit(1)

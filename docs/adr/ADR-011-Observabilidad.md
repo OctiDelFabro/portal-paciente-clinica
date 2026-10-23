@@ -29,6 +29,7 @@ Los valores son propuestas iniciales; D13 los valida con pruebas de carga.
 | `idempotency_replays_total` · `idempotency_conflicts_total` | ¿El consumidor reintenta bien (replays) o reutiliza claves (conflicts)? | Detectar una integración incorrecta antes de que genere correos duplicados. |
 | `email_send_duration_seconds` · `email_send_errors_total` · `email_circuit_open` | ¿El proveedor de correo responde? ¿Está abierto el circuito? | Es la dependencia externa más lenta: define el timeout de 5 s y el umbral del circuit breaker (D10). |
 | `notifications_delivered_total{result}` | ¿Cuántos correos se envían, reintentan o fallan definitivamente? | `failed` creciente indica un problema persistente del proveedor. |
+| `turnos_partner_requests_total{consumer,operation,outcome}` | ¿Cómo usa Car Cruds la capacidad publicada de Turnos? `outcome`: `ok`, `replayed`, `invalid`, `unauthorized`, `rate_limited` y los motivos de rechazo de negocio. | Soporte al consumidor sin pedirle logs: muchos `replayed` indican reintentos por timeouts; `idempotency_conflict`, claves mal reutilizadas; `unauthorized` sostenido, una clave mal configurada. Es además la base para conciliar lo facturado con lo pedido. |
 | `gateway_upstream_errors_total{upstream,kind}` · `gateway_retries_total{upstream}` | ¿Qué servicio interno falla o tarda, visto desde la entrada? | Ubicar la dependencia caída sin revisar cada servicio. |
 
 **Etiquetas acotadas.** `route` es el patrón registrado (`GET /appointments/{id}`), nunca la URL real. `reason`, `result` y `outcome` tienen valores fijos. `consumer` solo toma los nombres configurados.
@@ -46,10 +47,11 @@ Formato JSON a stdout con `log/slog` (`internal/platform/obs`). Un registro por 
 | `service`, `instance` | Saber quién escribió el registro. `instance` (hostname del contenedor) muestra el balanceo de D12. |
 | `correlation_id` | Seguir una operación de negocio entre servicios, incluso a través de RabbitMQ y del trabajador de correo. Viene en `X-Correlation-ID` o se genera en el primer servicio. |
 | `trace_id`, `span_id` | Saltar del log a la traza en Jaeger y viceversa. |
-| `event` (nombre estable) | Buscar por hecho, no por texto: `appointment.booked`, `appointment.rejected`, `outbox.published`, `outbox.broker_unavailable`, `event.processed`, `event.duplicate`, `event.retry`, `message.dead_lettered`, `notification.accepted`, `notification.sent`, `notification.retry`, `notification.failed`, `gateway.upstream_timeout`. |
+| `event` (nombre estable) | Buscar por hecho, no por texto: `appointment.booked`, `appointment.rejected`, `outbox.published`, `outbox.broker_unavailable`, `event.processed`, `event.duplicate`, `event.retry`, `message.dead_lettered`, `notification.accepted`, `notification.sent`, `notification.retry`, `notification.failed`, `gateway.upstream_timeout`, `partner.booking_billed`, `partner.disabled`. |
 | `route`, `method`, `status`, `duration_ms` | Log de acceso por solicitud: diagnosticar un error sin reproducirlo. |
 | `reason`, `attempt`, `retry`, `delay` | Explicar por qué se rechazó o reintentó algo. |
 | IDs opacos (`appointment_id`, `notification_id`, `event_id`, `doctor_id`) | Rastrear un caso puntual. En logs sí: no generan cardinalidad, como ocurriría en una métrica. |
+| `consumer`, `price_cents`, `currency` (solo en `partner.booking_billed`) | Rastro de auditoría de cada cargo: ante un reclamo del consumidor por un cobro se encuentra la reserva, su precio y su `correlation_id`. `consumer` es un nombre configurado, no un dato personal. |
 | `error` | Mensaje técnico de la causa; nunca incluye el cuerpo de la solicitud. |
 
 **Niveles.** INFO para hechos de negocio esperados. WARN para rechazos, reintentos y degradaciones que el sistema maneja solo. ERROR para fallas terminales o mensajes en DLQ, que siempre requieren acción. Si un ERROR no requiere acción, está mal clasificado.

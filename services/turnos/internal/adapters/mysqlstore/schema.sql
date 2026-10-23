@@ -28,3 +28,17 @@ CREATE TABLE IF NOT EXISTS outbox (
   attempts INT NOT NULL DEFAULT 0,
   INDEX idx_pending (published_at, id)
 );
+
+-- Reservas creadas por consumidores externos (ADR-008): duenio, clave de
+-- idempotencia permanente y precio cobrado al momento de reservar.
+CREATE TABLE IF NOT EXISTS partner_bookings (
+  appointment_id CHAR(36) PRIMARY KEY,
+  consumer VARCHAR(64) NOT NULL,
+  idem_key VARCHAR(128) NOT NULL,
+  fingerprint CHAR(64) NOT NULL,
+  price_cents BIGINT NOT NULL,
+  currency CHAR(3) NOT NULL,
+  booked_at DATETIME(3) NOT NULL,
+  UNIQUE KEY uq_consumer_key (consumer, idem_key),
+  INDEX idx_consumer_period (consumer, booked_at)
+);

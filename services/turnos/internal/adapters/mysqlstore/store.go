@@ -185,3 +185,56 @@ func (t *mysqlTx) AppendOutbox(ctx context.Context, m app.OutboxMessage) error {
 		m.EventID, m.RoutingKey, m.Payload, headers)
 	return err
 }
+
+const partnerColumns = "appointment_id, consumer, idem_key, fingerprint, price_cents, currency, booked_at"
+
+func scanPartner(row scanner) (app.PartnerBooking, error) {
+	var pb app.PartnerBooking
+	err := row.Scan(&pb.AppointmentID, &pb.Consumer, &pb.IdempotencyKey, &pb.Fingerprint, &pb.PriceCents, &pb.Currency, &pb.BookedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return pb, app.ErrNotFound
+	}
+	return pb, err
+}
+
+func (s *Store) PartnerBookingByKey(ctx context.Context, consumer, key string) (app.PartnerBooking, error) {
+	return scanPartner(s.DB.QueryRowContext(ctx, "SELECT "+partnerColumns+" FROM partner_bookings WHERE consumer = ? AND idem_key = ?", consumer, key))
+}
+
+func (s *Store) PartnerBookingOf(ctx context.Context, appointmentID string) (app.PartnerBooking, error) {
+	return scanPartner(s.DB.QueryRowContext(ctx, "SELECT "+partnerColumns+" FROM partner_bookings WHERE appointment_id = ?", appointmentID))
+}
+
+func (s *Store) PartnerUsage(ctx context.Context, consumer string, from, to time.Time) ([]app.UsageItem, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT pb.appointment_id, pb.booked_at, pb.price_cents, pb.currency, a.status
+		FROM partner_bookings pb JOIN appointments a ON a.id = pb.appointment_id
+		WHERE pb.consumer = ? AND pb.booked_at >= ? AND pb.booked_at < ?
+		ORDER BY pb.booked_at, pb.appointment_id`, consumer, from.UTC(), to.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []app.UsageItem
+	for rows.Next() {
+		var it app.UsageItem
+		var status string
+		if err := rows.Scan(&it.AppointmentID, &it.BookedAt, &it.PriceCents, &it.Currency, &status); err != nil {
+			return nil, err
+		}
+		it.Status = domain.Status(status)
+		out = append(out, it)
+	}
+	return out, rows.Err()
+}
+
+// FindPartnerBooking se ejecuta despues de bloquear la clave: con READ
+// COMMITTED ve la reserva que haya confirmado otra solicitud con esa clave.
+func (t *mysqlTx) FindPartnerBooking(ctx context.Context, consumer, key string) (app.PartnerBooking, error) {
+	return scanPartner(t.tx.QueryRowContext(ctx, "SELECT "+partnerColumns+" FROM partner_bookings WHERE consumer = ? AND idem_key = ?", consumer, key))
+}
+
+func (t *mysqlTx) InsertPartnerBooking(ctx context.Context, pb app.PartnerBooking) error {
+	_, err := t.tx.ExecContext(ctx, `INSERT INTO partner_bookings (`+partnerColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		pb.AppointmentID, pb.Consumer, pb.IdempotencyKey, pb.Fingerprint, pb.PriceCents, pb.Currency, pb.BookedAt.UTC())
+	return err
+}

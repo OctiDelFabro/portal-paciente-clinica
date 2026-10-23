@@ -122,6 +122,8 @@ func mapError(w http.ResponseWriter, err error) {
 		sendError(w, 422, "LEAD_TIME_TOO_SHORT", "Se requieren al menos 24 horas de anticipacion.")
 	case errors.Is(err, domain.ErrOverlap):
 		sendError(w, 409, "SLOT_UNAVAILABLE", "El horario se superpone con otro turno del medico o del paciente.")
+	case errors.Is(err, app.ErrIdempotencyConflict):
+		sendError(w, 409, "IDEMPOTENCY_CONFLICT", "La Idempotency-Key ya identifica una reserva con otros datos.")
 	case errors.Is(err, domain.ErrAlreadyCancelled):
 		sendError(w, 409, "ALREADY_CANCELLED", "El turno ya estaba cancelado.")
 	case errors.Is(err, domain.ErrPatientNotActive):

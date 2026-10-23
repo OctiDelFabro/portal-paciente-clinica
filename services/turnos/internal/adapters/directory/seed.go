@@ -5,6 +5,7 @@ package directory
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"portal-paciente-clinica/services/turnos/internal/app"
@@ -31,6 +32,15 @@ func (Seed) Doctor(_ context.Context, id string) (domain.Doctor, error) {
 		return domain.Doctor{}, app.ErrUnknownDoctor
 	}
 	return domain.Doctor{ID: id, Duration: d}, nil
+}
+
+func (Seed) Doctors(context.Context) ([]domain.Doctor, error) {
+	out := make([]domain.Doctor, 0, len(doctors))
+	for id, d := range doctors {
+		out = append(out, domain.Doctor{ID: id, Duration: d})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
 }
 
 func (Seed) Patient(_ context.Context, id string) (domain.Patient, error) {
