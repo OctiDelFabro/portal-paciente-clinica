@@ -31,7 +31,7 @@ La implementación vive en el propio servicio Turnos (adaptador `httpapi/partner
 - **Autenticación en el gateway:** obligaría al gateway a conocer la propiedad de los turnos; el servicio dueño ya la tiene en su base.
 
 ## Compatibilidad y publicación
-`/v1` es la versión mayor; cambios incompatibles exigen `/v2` y guía de migración. La URL pública se entrega a cada consumidor con su clave. La ruta interna `/api/turnos` **no** es parte del contrato y no tiene autenticación: en un despliegue compartido no debe quedar expuesta fuera de la red del portal.
+`/v1` es la versión mayor; cambios incompatibles exigen `/v2` y guía de migración. La URL pública se entrega a cada consumidor con su clave. La ruta interna `/api/turnos` **no** es parte del contrato y todavía no tiene autenticación del portal. Por eso el gateway tiene dos listeners: `PUBLIC_HTTP_ADDR` (el único que se publica) atiende solo `/v1/*` y `/healthz`, y `HTTP_ADDR` queda en la red interna con `/api/turnos/*` y `/metrics`. Se eligió separar por red y no filtrar por IP de origen porque detrás de un túnel o proxy inverso todas las solicitudes llegan con la IP del proxy (por ejemplo `127.0.0.1`) y el filtro se saltearía. Cuando exista la autenticación del portal, `/api/turnos` podrá pasar al listener público.
 
 ## Consecuencias y límites
 - Nueva tabla `partner_bookings` (dueño, clave, huella, precio, fecha). No modifica `appointments`.

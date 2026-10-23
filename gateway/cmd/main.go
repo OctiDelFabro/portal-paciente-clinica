@@ -133,18 +133,15 @@ func proxy(name, target, stripPrefix string) http.Handler {
 	})
 }
 
-// routes arma el ruteo publico. La capacidad publicada de Turnos
-// (turnos-partner-v1) y la API de Notificaciones comparten /v1; la clave la
-// envia el consumidor y la valida cada servicio.
-func routes(turnosURL, notificationsURL string) *http.ServeMux {
+// mountPublic registra lo que pueden ver otros grupos: la capacidad publicada
+// de Turnos (turnos-partner-v1) y la API de Notificaciones, ambas bajo /v1. La
+// clave la envia el consumidor y la valida cada servicio.
+func mountPublic(mux *http.ServeMux, turnosURL, notificationsURL string) {
 	turnos := proxy("turnos", turnosURL, "")
-	mux := http.NewServeMux()
-	mux.Handle("/api/turnos/", proxy("turnos", turnosURL, "/api/turnos"))
 	for _, path := range []string{"/v1/appointments", "/v1/appointments/", "/v1/doctors", "/v1/usage"} {
 		mux.Handle(path, turnos)
 	}
 	mux.Handle("/v1/", proxy("notifications", notificationsURL, ""))
-	mux.Handle("GET /metrics", obs.MetricsHandler())
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"service": "gateway", "status": "ok", "portalAuthImplemented": false})
@@ -152,7 +149,29 @@ func routes(turnosURL, notificationsURL string) *http.ServeMux {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		sendError(w, 404, "NOT_FOUND", "Ruta inexistente.")
 	})
+}
+
+// routes es el ruteo de la red interna del portal: agrega a lo publico las
+// rutas del portal (todavia sin autenticacion) y las metricas.
+func routes(turnosURL, notificationsURL string) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/api/turnos/", proxy("turnos", turnosURL, "/api/turnos"))
+	mux.Handle("GET /metrics", obs.MetricsHandler())
+	mountPublic(mux, turnosURL, notificationsURL)
 	return mux
+}
+
+// publicRoutes es el unico ruteo que se expone fuera de la red del portal
+// (ADR-008): sin /api/turnos ni /metrics.
+func publicRoutes(turnosURL, notificationsURL string) *http.ServeMux {
+	mux := http.NewServeMux()
+	mountPublic(mux, turnosURL, notificationsURL)
+	return mux
+}
+
+func newServer(addr string, mux *http.ServeMux) *http.Server {
+	return &http.Server{Addr: addr, Handler: obs.Middleware("gateway", mux), ReadHeaderTimeout: 3 * time.Second,
+		ReadTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second}
 }
 
 func main() {
@@ -166,20 +185,35 @@ func main() {
 	}
 	defer shutdown(context.Background())
 
-	mux := routes(env("TURNOS_URL", "http://127.0.0.1:8081"), env("NOTIFICATIONS_URL", "http://127.0.0.1:8085"))
-
+	turnosURL, notificationsURL := env("TURNOS_URL", "http://127.0.0.1:8081"), env("NOTIFICATIONS_URL", "http://127.0.0.1:8085")
 	addr := env("HTTP_ADDR", "127.0.0.1:8080")
-	server := &http.Server{Addr: addr, Handler: obs.Middleware("gateway", mux), ReadHeaderTimeout: 3 * time.Second,
-		ReadTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second}
+	servers := []*http.Server{newServer(addr, routes(turnosURL, notificationsURL))}
+	// PUBLIC_HTTP_ADDR es el puerto que se publica a otros grupos; HTTP_ADDR
+	// queda en la red interna del portal.
+	if public := os.Getenv("PUBLIC_HTTP_ADDR"); public != "" {
+		if public == addr {
+			slog.Error("PUBLIC_HTTP_ADDR must differ from HTTP_ADDR")
+			os.Exit(1)
+		}
+		servers = append(servers, newServer(public, publicRoutes(turnosURL, notificationsURL)))
+	}
 	go func() {
 		<-ctx.Done()
 		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = server.Shutdown(sctx)
+		for _, s := range servers {
+			_ = s.Shutdown(sctx)
+		}
 	}()
-	slog.Info("gateway listening", "event", "service.started", "addr", addr)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		slog.Error("http server failed", "error", err.Error())
-		os.Exit(1)
+	errs := make(chan error, len(servers))
+	for _, s := range servers {
+		slog.Info("gateway listening", "event", "service.started", "addr", s.Addr)
+		go func(s *http.Server) { errs <- s.ListenAndServe() }(s)
+	}
+	for range servers {
+		if err := <-errs; err != nil && err != http.ErrServerClosed {
+			slog.Error("http server failed", "error", err.Error())
+			os.Exit(1)
+		}
 	}
 }

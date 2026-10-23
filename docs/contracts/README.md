@@ -49,6 +49,7 @@ Reglas de negocio de la reserva (las mismas que usa el portal):
 | Aislamiento | Un consumidor solo ve, cancela y factura **sus** turnos. Un turno ajeno o inexistente responde lo mismo: `404 NOT_FOUND`. |
 | Límite | 60 solicitudes por minuto por consumidor (configurable). Al excederlo: `429` con `Retry-After` en segundos. |
 | Transporte | HTTPS en el despliegue compartido. No seguir redirecciones. |
+| Puerto | El consumidor usa el **puerto público** del gateway (local: `8088`), que solo atiende `/v1/*` y `/healthz`. Las rutas internas del portal no existen ahí (`404`). |
 | Correlación | Opcional: enviar `X-Correlation-ID`; el portal lo conserva en logs y trazas, útil para pedir soporte. |
 | Caché | Todas las respuestas llevan `Cache-Control: no-store`. |
 
@@ -118,7 +119,7 @@ Su adaptador (`services/employees/adapters/clinic`, commit `9eec277`) se constru
 
 | Antes (ruta interna, observada) | Ahora (capacidad publicada) |
 |---|---|
-| `CLINIC_BASE_URL=…/api/turnos` | `CLINIC_BASE_URL=…/v1` (se siguen agregando `/appointments` y `/appointments/{id}`) |
+| `CLINIC_BASE_URL=…/api/turnos` | `CLINIC_BASE_URL=<host público>/v1`, local `http://host.docker.internal:8088/v1` (se siguen agregando `/appointments` y `/appointments/{id}`). `/api/turnos` ya no es accesible desde fuera del portal. |
 | Sin autenticación | Header `X-API-Key` |
 | Sin idempotencia: "enviar como máximo una vez" y conciliar a mano | Header `Idempotency-Key` (sugerido: su `requestId` o `localReference`). Un `unknown` se resuelve repitiendo el POST. |
 | Veían cualquier turno | Solo los propios; un turno ajeno da `404` |
@@ -133,7 +134,7 @@ docker compose up -d --build
 $env:TURNOS_KEY = 'solo-demo-local-1'; $env:TURNOS_KEY_OTHER = 'solo-demo-local-2'
 python scripts/check_turnos_contract.py
 ```
-El script valida contra el gateway (`TURNOS_BASE_URL`, por defecto `http://127.0.0.1:8080`) estados, headers y cuerpos de todas las operaciones con el OpenAPI, incluidos idempotencia, aislamiento entre consumidores y facturación. Cada corrida crea y cancela un turno, que queda facturado. Las claves de arriba son solo de ejemplo local.
+El script valida contra el puerto público del gateway (`TURNOS_BASE_URL`, por defecto `http://127.0.0.1:8088`) estados, headers y cuerpos de todas las operaciones con el OpenAPI, incluidos idempotencia, aislamiento entre consumidores y facturación. Cada corrida crea y cancela un turno, que queda facturado. Las claves de arriba son solo de ejemplo local.
 
 Configuración del proveedor (servicio Turnos):
 
@@ -145,6 +146,8 @@ Configuración del proveedor (servicio Turnos):
 | `TURNOS_PARTNER_RATE` | `60` | Solicitudes por minuto por consumidor. |
 
 Un valor inválido de precio, moneda o límite impide iniciar Turnos.
+
+**Al desplegar se publica solamente `PUBLIC_HTTP_ADDR` del gateway** (puerto `8088` en compose). `HTTP_ADDR` (`8080`) es la red interna del portal: atiende además `/api/turnos/*`, que todavía no tiene autenticación del portal, y `/metrics`. Nunca exponerlo fuera de esa red, tampoco mediante un túnel.
 
 Ejemplos procesables en [examples/turnos](examples/turnos).
 

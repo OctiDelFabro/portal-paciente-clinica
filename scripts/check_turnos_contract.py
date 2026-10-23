@@ -5,7 +5,7 @@ valida estados, headers y cuerpos con el OpenAPI. No sustituye un validador
 completo de OpenAPI/JSON Schema.
 
 Variables:
-  TURNOS_BASE_URL   default http://127.0.0.1:8080
+  TURNOS_BASE_URL   default http://127.0.0.1:8088 (puerto publico del gateway)
   TURNOS_KEY        clave de un consumidor de TURNOS_PARTNER_KEYS (obligatoria)
   TURNOS_KEY_OTHER  clave de otro consumidor, para probar aislamiento (opcional)
 
@@ -25,7 +25,7 @@ import uuid
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CONTRACT = json.loads((ROOT / "docs/contracts/turnos-partner-v1.openapi.json").read_text(encoding="utf-8"))
-BASE = os.environ.get("TURNOS_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
+BASE = os.environ.get("TURNOS_BASE_URL", "http://127.0.0.1:8088").rstrip("/")
 KEY = os.environ.get("TURNOS_KEY")
 OTHER = os.environ.get("TURNOS_KEY_OTHER")
 checks = []
@@ -119,6 +119,9 @@ def run():
     checks.append("ejemplos publicados validos")
 
     verify("autenticacion requerida", "GET", "/v1/doctors", 401, "UNAUTHORIZED", key=None)
+    status, _, body = request("POST", "/api/turnos/appointments", body={"patientId": "pat-001", "doctorId": "doc-001", "startAt": "2030-01-01T10:00:00Z"}, key=None)
+    assert status == 404 and body["error"]["code"] == "NOT_FOUND", ("ruta interna expuesta", status, body)
+    checks.append("ruta interna del portal no expuesta")
     verify("clave invalida", "GET", "/v1/doctors", 401, "UNAUTHORIZED", key="not-a-key")
     _, catalog = verify("catalogo de medicos", "GET", "/v1/doctors", 200)
     doctor = catalog["doctors"][0]

@@ -57,7 +57,7 @@ API de Turnos: `POST /api/turnos/appointments`, `GET /api/turnos/appointments/{i
 **Pruebas**
 - Unitarias: `go test ./...`
 - Integración contra MySQL y RabbitMQ reales (requiere Docker): `go test -tags integration ./...`
-- Contrato de la capacidad publicada (con el stack levantado y `TURNOS_PARTNER_KEYS` definida): `python scripts/check_turnos_contract.py`
+- Contrato de la capacidad publicada (con el stack levantado y `TURNOS_PARTNER_KEYS` definida; usa el puerto público `8088`): `python scripts/check_turnos_contract.py`
 - Contrato del mock de Notificaciones: `python scripts/check_contract.py`
 
 El mock en memoria sigue disponible para el grupo consumidor con `docker compose --profile mock up notifications-mock` (puerto 8086). Pacientes, Médicos e Historia clínica siguen como esqueletos con `/healthz`. Frontend: ver `frontend/README.md`.

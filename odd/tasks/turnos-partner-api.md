@@ -10,6 +10,7 @@ Delivery strategy: ask-on-risk. Test runner: `go test ./...` plus `python script
 - S5 — User: "dejarlo bien documentado asi el grupo que nos tiene que consumir nos consuma bien". Scope: OpenAPI `docs/contracts/turnos-partner-v1.openapi.json`; `docs/contracts/README.md` rewritten as the consumer guide (base URL, headers, examples, errors, billing, migration notes for Car Cruds); ADR-008 records the change of published capability (Notificaciones → Turnos) keeping history; ADR-001, ADR-013, ENTREGA-2 and README updated. Notificaciones stays an internal service.
 - S6 — Compatibility with the client Car Cruds already built (commit 9eec277): response fields `id, patientId, doctorId, startAt, endAt, status, version`; POST success is exactly 201; error codes `INVALID_REQUEST`/400, `INVALID_JSON`/400, `SLOT_UNAVAILABLE`/409, `PATIENT_NOT_ENABLED`/403, `UNKNOWN_DOCTOR`/404, `UNKNOWN_PATIENT`/404, `LEAD_TIME_TOO_SHORT`/422 unchanged. Only base URL and the two headers change for them.
 - S7 — Brief 4.1: "Contrato **formal, versionado, estándar y procesable**". Scope: a runnable contract check against the running gateway, like `scripts/check_contract.py`.
+- S8 — User (2026-10-23): "si cerra el agujero por favor" (answer to: close `/api/turnos` leaving it reachable only from the portal's internal network when the gateway is published). Scope: gateway second listener `PUBLIC_HTTP_ADDR` serving only `/v1/*` and `/healthz`; `HTTP_ADDR` stays internal with `/api/turnos/*` and `/metrics`.
 
 ## Tasks
 | ID | Specs | Route | Status | Commit / evidence |
@@ -17,6 +18,7 @@ Delivery strategy: ask-on-risk. Test runner: `go test ./...` plus `python script
 | T1 | S2 | inline | done | 35fe990 — apikey tests RED→GREEN; notifications tests unchanged and green |
 | T2 | S1, S2, S3, S4, S6 | inline | done | 0c1a278 — app + HTTP tests RED→GREEN; MySQL integration green (12 concurrent same-key → 1 appointment, 1 charge) |
 | T3 | S1 | inline | done | 34e48ca — gateway routing test RED→GREEN |
+| T5 | S2, S8 | inline | done | gateway public listener — RED→GREEN; live 8088: /api/turnos and /metrics 404; check_turnos_contract.py 22/22 |
 | T4 | S5, S7 | inline | done | 9f5f312 — check_turnos_contract.py 21/21 against compose stack |
 
 T1 extract API key auth + rate limit from Notificaciones into `internal/platform/apikey` and reuse it. T2 Turnos partner API (schema, store, app, HTTP, config, tests). T3 gateway routes + compose env. T4 contract, contract check script, docs.
@@ -33,3 +35,5 @@ Route evidence: units are sequential (T2 depends on T1, T3/T4 on T2); no Writer 
 - L8: `.env.example` still access-denied; new variables documented in docs/contracts/README.md and defaulted in compose.yaml.
 - L9: Pending assumptions to confirm with Car Cruds: price ARS 25.000 per booking, no refund on cancel; real employees as patients (seed data only).
 - L10: Independent verifier (item 2): S1–S7 PASS, no blockers. Probes: 16 concurrent same-key POSTs with 4 different payloads → 1 appointment (4×201 same id, 12×409), no deadlock; cross-consumer GET/cancel → 404; usage billed only created bookings. Advisories: /api/turnos unauthenticated (baseline); partner POST requires Content-Type (Car Cruds client already sets it, client.go:70); cancel ignores a body; duplicate keys or consumer names >64 chars not validated at startup; replay of a cancelled booking returns status cancelled. RDD: T2 0c1a278 high, consent declined by user (declined_this_candidate); 0c1a278..a99f70b medium/under_budget.
+- L11 (2026-10-23, user): "si cerra el agujero por favor"
+- L12: Chose network separation (two listeners) over source-IP filtering because behind a tunnel or reverse proxy every request arrives from the proxy address; local 8080 behavior unchanged.

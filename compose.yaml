@@ -13,10 +13,12 @@ services:
     environment:
       <<: *otel
       HTTP_ADDR: 0.0.0.0:8080
+      # Unico puerto que se publica a otros grupos: solo /v1 y /healthz (ADR-008).
+      PUBLIC_HTTP_ADDR: 0.0.0.0:8088
       TURNOS_URL: http://turnos:8081
       NOTIFICATIONS_URL: http://notifications:8085
     depends_on: [turnos, notifications]
-    ports: ["127.0.0.1:8080:8080"]
+    ports: ["127.0.0.1:8080:8080", "127.0.0.1:8088:8088"]
   turnos:
     build:
       context: .

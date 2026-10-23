@@ -121,3 +121,43 @@ func TestPublicV1RoutesReachTheirService(t *testing.T) {
 		}
 	}
 }
+
+// El listener publico es lo unico que se expone a otros grupos: no debe
+// alcanzar las rutas internas del portal (sin autenticacion) ni las metricas.
+func TestPublicListenerHidesPortalRoutes(t *testing.T) {
+	var turnosCalls, notifCalls atomic.Int32
+	turnos := upstream(200, &turnosCalls, 0)
+	defer turnos.Close()
+	notif := upstream(200, &notifCalls, 0)
+	defer notif.Close()
+	mux := publicRoutes(turnos.URL, notif.URL)
+	for _, path := range []string{"/api/turnos/appointments", "/api/turnos/appointments/a1", "/metrics"} {
+		for _, method := range []string{"GET", "POST"} {
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader("{}")))
+			if rec.Code != 404 || !strings.Contains(rec.Body.String(), "NOT_FOUND") {
+				t.Fatalf("%s %s: %d %s", method, path, rec.Code, rec.Body)
+			}
+		}
+	}
+	if turnosCalls.Load() != 0 {
+		t.Fatalf("portal route reached turnos %d times", turnosCalls.Load())
+	}
+	for _, c := range [][3]string{{"POST", "/v1/appointments", "turnos"}, {"GET", "/v1/usage", "turnos"}, {"GET", "/v1/templates", "notifications"}} {
+		beforeT, beforeN := turnosCalls.Load(), notifCalls.Load()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(c[0], c[1], nil))
+		reached := turnosCalls.Load() > beforeT
+		if c[2] == "notifications" {
+			reached = notifCalls.Load() > beforeN
+		}
+		if !reached || rec.Code != 200 {
+			t.Fatalf("%s %s did not reach %s: %d", c[0], c[1], c[2], rec.Code)
+		}
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/healthz", nil))
+	if rec.Code != 200 {
+		t.Fatalf("healthz: %d", rec.Code)
+	}
+}
