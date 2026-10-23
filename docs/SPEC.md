@@ -1,5 +1,5 @@
 # portal-paciente-clinica — Alcance y requisitos
-SPEC.md · Versión 0.2 · Borrador de la Entrega 1
+SPEC.md · Versión 0.3 · Entrega 2
 Esta versión registra las decisiones funcionales confirmadas por el grupo. Los puntos todavía no acordados se identifican expresamente como pendientes o propuestas por validar. El documento describe el sistema a construir; no acredita funcionalidades implementadas.
 ## 1. Dominio y objetivo
 Dominio aprobado: portal paciente de una única clínica. El sistema permitirá buscar médicos y especialidades, gestionar turnos propios y de menores a cargo, organizar la agenda médica y consultar o registrar información de la historia clínica según el rol y la relación con el paciente.
@@ -39,6 +39,7 @@ Criterio de aceptación: las consultas se autorizan según esas relaciones; un u
 RF-11 — Registro y actualización de pacientes
 Recepción podrá registrar y actualizar pacientes y verificar los datos de quienes se registren por su cuenta antes de habilitarlos. Criterio de aceptación: los datos verificados pueden utilizarse para asignar turnos al paciente. El alta de cuentas se detalla en RF-13. Pendiente: campos obligatorios e identificación de pacientes.
 RF-12 — Capacidad compartida de Notificaciones
+**Actualización 23/10/2026:** la capacidad compartida es Turnos (ver RF-14). Lo siguiente se conserva como requisito de la API de Notificaciones, que sigue disponible sin consumidor asignado.
 La capacidad seleccionada para ofrecer a otro grupo es el microservicio de Notificaciones. El consumidor externo podrá solicitar únicamente correos electrónicos mediante plantillas generales de confirmación, cancelación y recordatorio de operaciones, predefinidas por el grupo; enviará el identificador de la plantilla y sus parámetros. Las notificaciones dentro del portal serán de uso interno. El portal generará avisos de reserva, cancelación y reprogramación, incluidos los turnos cancelados por bloqueo de agenda, y un recordatorio 24 horas antes del turno. Cuando el turno corresponda a un menor, los avisos se dirigirán al menor y al adulto responsable; si el menor no tiene correo propio, el correo se enviará únicamente al responsable.
 Decisión inicial de comunicación: API HTTP para el grupo consumidor y RabbitMQ para eventos internos del portal. La API externa tendrá un contrato versionado en OpenAPI. Una solicitud válida se registrará para procesamiento asíncrono; la respuesta HTTP 202 indicará aceptación y devolverá un identificador, sin afirmar que el correo ya fue enviado. Los eventos internos utilizarán plantillas para el correo electrónico y el aviso dentro del portal. Los recordatorios internos se programarán para 24 horas antes del turno. El portal no aceptará reservas con menos de 24 horas. Pendiente técnico: invalidar los recordatorios obsoletos cuando un turno se cancele o reprograme.
 Justificación: una API HTTP permite al otro grupo consumir la capacidad con un contrato explícito, sin depender de la topología ni las credenciales del broker interno. RabbitMQ permite que los servicios del portal publiquen eventos y que Notificaciones los procese sin esperar al envío de correo. El mecanismo deberá definir reintentos y deduplicación; la mensajería no garantiza por sí sola ausencia de duplicados.
@@ -47,10 +48,24 @@ RF-13 — Registro de cuenta y habilitación por recepción
 El paciente podrá registrarse por su cuenta. Recepción verificará sus datos antes de habilitarlo para utilizar las funciones protegidas del portal. Crear la cuenta no equivale a quedar habilitado; el sistema conservará el estado pendiente de verificación hasta la validación de recepción.
 Criterios de aceptación: un paciente recién registrado queda pendiente; recepción puede verificar sus datos y habilitarlo; antes de esa habilitación no puede reservar turnos ni consultar historias clínicas desde su cuenta. Pendiente: datos y documentación exigidos para la validación, tratamiento de registros duplicados y rechazo o corrección de solicitudes.
 ## 4. Integración con otros grupos
-Capacidad propia seleccionada: Notificaciones. Grupo consumidor: pendiente de asignación. El contrato inicial se define en docs/contracts/notifications-v1.openapi.json; utiliza una clave de API por consumidor, elegida por el grupo. Grupo proveedor y capacidad externa que consumirá el portal: pendientes de definición. No se presupone una integración externa específica.
+**Actualización 23/10/2026.** Capacidad propia publicada: **Turnos**. Grupo consumidor: **Car Cruds** (concesionaria), cuyo servicio Empleados reserva chequeos de empleados y candidatos. Contrato: docs/contracts/turnos-partner-v1.openapi.json.
+
+RF-14 — Capacidad compartida de Turnos
+Un consumidor externo autenticado por clave podrá reservar, consultar y cancelar sus turnos y consultar su estado de cuenta. Se aplican las reglas de RF-02/RF-03 (24 h, superposición, paciente habilitado). Criterios de aceptación: sin clave válida se responde 401; un consumidor no puede ver ni cancelar turnos de otro; repetir una reserva con la misma Idempotency-Key y los mismos datos devuelve el mismo turno sin volver a cobrarlo, y con otros datos devuelve 409; cada reserva creada se factura al precio vigente en ese momento y la cancelación no la reintegra. Supuesto: monto inicial ARS 25.000 por reserva, a confirmar con el consumidor.
+
+Antes del 23/10/2026: Capacidad propia seleccionada: Notificaciones. Grupo consumidor: pendiente de asignación. El contrato inicial se define en docs/contracts/notifications-v1.openapi.json; utiliza una clave de API por consumidor, elegida por el grupo. Grupo proveedor y capacidad externa que consumirá el portal: pendientes de definición. No se presupone una integración externa específica.
 ## 5. Documentación relacionada y próximos acuerdos
 El frontend utilizará React y TypeScript. La arquitectura se documenta en docs/ARCHITECTURE.md, apoyada en los diagramas de contexto y contenedores. D1 registra los límites y la propiedad de los datos; D8 registra el contrato propio; D3 inicial justificará la persistencia y D5 inicial la comunicación. El README explicará el proyecto y la ejecución de lo disponible.
 El proyecto y el repositorio se llaman portal-paciente-clinica. El repositorio público está disponible en https://github.com/OctiDelFabro/portal-paciente-clinica. Esta especificación está publicada en main junto con el código y deberá mantenerse actualizada. Los puntos pendientes anteriores se resolverán por etapas antes de considerar cerrado el diseño correspondiente.
 ## 6. Estado de este paquete
 Se incorporan las respuestas posteriores a la última versión guardada en Drive y se adjuntan contrato, mock y estructura inicial. Este archivo no acredita funcionalidades clínicas implementadas. El contenido completo de la primera entrega está publicado en main del repositorio público.
+
+## 7. Estado de implementación (Entrega 2)
+| Requisito | Estado |
+|---|---|
+| RF-02 Reserva (24 h, sin superposiciones, concurrencia) | Implementado en Turnos. Agenda y bloqueos todavía no; los médicos vienen de datos semilla. |
+| RF-03 Cancelación (24 h) | Implementado en Turnos. |
+| RF-12 Notificaciones (correo por evento, aviso del portal, menores → responsable, API pública) | Implementado para reserva y cancelación; recordatorios pendientes. |
+| RF-13 Habilitación por recepción | Respetada al reservar: un paciente no habilitado recibe 403 `PATIENT_NOT_ENABLED`. El registro todavía no está implementado. |
+| RF-01, RF-04 a RF-11 | Pendientes para la presentación final. |
 

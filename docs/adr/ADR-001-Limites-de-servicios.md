@@ -14,7 +14,7 @@ Será propietario de los datos de pacientes, sus contactos, su estado de habilit
 Historia clínica
 Será propietario de historias clínicas y registros de atenciones. Aplicará permisos según el rol y las relaciones con el paciente. Un turno cancelado no habilita por sí mismo el acceso médico a la historia clínica. Obtendrá las validaciones necesarias mediante contratos de Pacientes y Turnos, sin consultar directamente sus bases.
 Notificaciones
-Será propietario del catálogo de plantillas, solicitudes, estados de procesamiento y avisos internos. Consumirá eventos del portal y ofrecerá al grupo consumidor una API HTTP de correos por plantillas. El detalle del contrato se registra en D8.
+Será propietario del catálogo de plantillas, solicitudes, estados de procesamiento y avisos internos. Consumirá eventos del portal y ofrecerá al grupo consumidor una API HTTP de correos por plantillas. El detalle del contrato se registra en D8. *Actualización 23/10/2026: la capacidad publicada pasó a ser Turnos ([ADR-008](ADR-008-Contrato-propio.md)); la API de Notificaciones se mantiene sin consumidor asignado.*
 Relaciones y propiedad de los datos
 El frontend React/TypeScript centralizará la interacción y accederá al backend a través del API Gateway Go/Gin. El gateway validará las credenciales y dirigirá solicitudes, mientras las reglas de negocio se ejecutarán en los servicios responsables.
 Cada servicio accederá solo a su almacenamiento propio. Las consultas entre servicios se realizarán mediante contratos, y los eventos internos utilizarán RabbitMQ. La búsqueda y la caché serán representaciones derivadas, no fuentes autoritativas para confirmar una reserva.
@@ -34,3 +34,10 @@ Se mantienen cinco microservicios de negocio y un gateway, con contratos y depen
 La publicación de eventos y el registro de reservas deben coordinarse para no perder avisos ni generar efectos duplicados. La estrategia de concurrencia y publicación fiable sigue pendiente de diseño concreto. La división inicial se validará durante la implementación; si cambia, el ADR anterior conservará su historia.
 Referencias del proyecto
 SPEC.md contiene el alcance y las reglas confirmadas. docs/ARCHITECTURE.md explica los componentes y flujos. ADR-008-Contrato-propio.md desarrolla la capacidad compartida. Los diagramas de contexto y contenedores deben actualizarse para reflejar esta decisión.
+
+## Validación Entrega 2
+**Resultado: límites confirmados, sin cambios.**
+- Turnos implementa reserva y cancelación con datos propios (`appointments`, `booking_locks`, `outbox`) y no lee bases ajenas. Necesitó médicos y pacientes, que se obtienen por el puerto `Directory` (hoy datos semilla, luego HTTP).
+- Notificaciones recibe solo identificadores en los eventos y resuelve contactos por su puerto `Contacts`, sin acceder a la base de Pacientes.
+- La separación permitió que una caída de RabbitMQ o del correo no afecte la reserva (ADR-010).
+- Pendiente de validar con implementación: Pacientes, Médicos e Historia clínica siguen como esqueletos.

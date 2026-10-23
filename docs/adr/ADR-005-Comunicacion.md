@@ -2,6 +2,8 @@
 **Decisión D5 · Estado: diseño inicial para Entrega 1.** HTTP para consultas y comandos que necesitan respuesta; RabbitMQ para eventos internos. Los parámetros siguientes son valores técnicos iniciales para validar durante implementación.
 
 ## Contexto y decisión
+**Actualización 23/10/2026:** la capacidad publicada pasa a ser **Turnos** para el consumidor Car Cruds ([ADR-008](ADR-008-Contrato-propio.md)). Notificaciones conserva su API, pero ya no es la capacidad compartida.
+
 React/TypeScript accede por el gateway a los servicios. Los servicios consultan capacidades ajenas mediante HTTP; no leen bases de otros servicios. El grupo consumidor solicita correos por HTTP a la capacidad publicada de Notificaciones, con clave de API propia. El acceso público se publicará a través de la ruta del gateway del proveedor; el consumidor debe iniciar la llamada desde su microservicio responsable, conforme a la consigna.
 
 | Interacción | Mecanismo | Resultado esperado |
@@ -51,3 +53,12 @@ El mock implementa únicamente el contrato HTTP, con memoria e idempotencia dura
 - [RabbitMQ: dead-letter exchanges](https://www.rabbitmq.com/docs/dlx).
 - [RFC 9110: semántica HTTP](https://www.rfc-editor.org/rfc/rfc9110.html#name-202-accepted).
 
+## Validación Entrega 2
+**Resultado: diseño confirmado e implementado para el flujo de reserva y cancelación.**
+- Exchange `portal.events.v1`, rutas `turnos.reservado.v1` y `turnos.cancelado.v1`, sobre según `turnos-events-v1.schema.json` (verificado en `app/service_test.go`).
+- Outbox en la misma transacción, publisher confirms y `mandatory`; un evento devuelto queda pendiente (`outbox_publish_total{result="returned"}`).
+- Notificaciones reconoce el mensaje solo después de persistir inbox, correos y aviso. Reintentos a los 5 s, 30 s y 120 s con colas TTL, y después la DLQ `notifications.turnos.v1.dlq`. Los mensajes mal formados van directo a la DLQ.
+- Tiempos del gateway: 5 s por solicitud, 2 s hacia el servicio, 500 ms de conexión, un reintento de GET con espera de 100–300 ms (`gateway/cmd/main_test.go`).
+- La traza y la correlación viajan en headers HTTP y AMQP y en la outbox (ADR-011).
+
+Pendiente: recordatorios 24 h antes (`turnos.recordatorio-solicitado.v1`), reprogramación y medición real de los tiempos (D13).

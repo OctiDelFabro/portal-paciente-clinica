@@ -1,0 +1,139 @@
+//go:build integration
+
+// Test de integracion contra MySQL real (enunciado 2.11). Requiere Docker:
+// go test -tags integration ./services/turnos/...
+package mysqlstore
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/testcontainers/testcontainers-go/modules/mysql"
+
+	"portal-paciente-clinica/services/turnos/internal/adapters/directory"
+	"portal-paciente-clinica/services/turnos/internal/app"
+	"portal-paciente-clinica/services/turnos/internal/domain"
+)
+
+func startStore(t *testing.T) *Store {
+	t.Helper()
+	ctx := context.Background()
+	c, err := mysql.Run(ctx, "mysql:8.4", mysql.WithDatabase("turnos"), mysql.WithUsername("turnos"), mysql.WithPassword("test-only"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Terminate(ctx) })
+	dsn, err := c.ConnectionString(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
+}
+
+// Reservas concurrentes del mismo medico con horarios que se pisan parcialmente:
+// el bloqueo por recurso debe dejar exactamente una (D4).
+func TestConcurrentOverlappingBookingsKeepOne(t *testing.T) {
+	store := startStore(t)
+	now := time.Now().UTC()
+	base := now.Add(72 * time.Hour).Truncate(time.Hour)
+	var seq atomic.Int64
+	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
+		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-8000-%012d", seq.Add(1)) }}
+	var ok atomic.Int32
+	var wg sync.WaitGroup
+	for i := 0; i < 15; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			patient := []string{"pat-001", "pat-003"}[i%2]
+			start := base.Add(time.Duration(i%3) * 10 * time.Minute)
+			if _, err := svc.Book(context.Background(), patient, "doc-001", start); err == nil {
+				ok.Add(1)
+			}
+		}(i)
+	}
+	wg.Wait()
+	var rows, events int
+	_ = store.DB.QueryRow("SELECT COUNT(*) FROM appointments WHERE status = 'booked'").Scan(&rows)
+	_ = store.DB.QueryRow("SELECT COUNT(*) FROM outbox").Scan(&events)
+	if ok.Load() != 1 || rows != 1 || events != 1 {
+		t.Fatalf("want one booking and one event, got ok=%d rows=%d events=%d", ok.Load(), rows, events)
+	}
+}
+
+var idSeq atomic.Int64
+
+func TestCancelPersistsVersionAndEvent(t *testing.T) {
+	store := startStore(t)
+	now := time.Now().UTC()
+	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
+		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-9000-%012d", idSeq.Add(1)) }}
+	a, err := svc.Book(context.Background(), "pat-001", "doc-002", now.Add(48*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Cancel(context.Background(), a.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get(context.Background(), a.ID)
+	if err != nil || got.Status != domain.StatusCancelled || got.Version != 2 || got.CancelReason != "patient_request" {
+		t.Fatalf("unexpected row: %+v %v", got, err)
+	}
+}
+
+// Solicitudes concurrentes de un consumidor externo con la misma
+// Idempotency-Key: un solo turno, una sola reserva cobrada (ADR-008).
+func TestConcurrentPartnerRequestsWithSameKeyCreateOne(t *testing.T) {
+	store := startStore(t)
+	now := time.Now().UTC()
+	start := now.Add(96 * time.Hour).Truncate(time.Hour)
+	var seq atomic.Int64
+	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
+		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-8000-%012d", seq.Add(1)) },
+		Price: app.Pricing{Cents: 2500000, Currency: "ARS"}}
+	ctx := context.Background()
+	ids := make([]string, 12)
+	errs := make([]error, 12)
+	var wg sync.WaitGroup
+	for i := range ids {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			a, _, err := svc.BookForPartner(ctx, "carcruds", "chequeo-001", "pat-001", "doc-002", start)
+			ids[i], errs[i] = a.ID, err
+		}(i)
+	}
+	wg.Wait()
+	for i := range ids {
+		if errs[i] != nil || ids[i] != ids[0] {
+			t.Fatalf("request %d: id=%s err=%v, want %s", i, ids[i], errs[i], ids[0])
+		}
+	}
+	if _, _, err := svc.BookForPartner(ctx, "carcruds", "chequeo-001", "pat-003", "doc-002", start); err != app.ErrIdempotencyConflict {
+		t.Fatalf("same key with other data: %v", err)
+	}
+	if _, err := svc.GetForPartner(ctx, "other", ids[0]); err != app.ErrNotFound {
+		t.Fatalf("other consumer read: %v", err)
+	}
+	u, err := svc.Usage(ctx, "carcruds", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(u.Items) != 1 || len(u.Totals) != 1 || u.Totals[0].AmountCents != 2500000 || u.Items[0].Status != domain.StatusBooked {
+		t.Fatalf("usage = %+v", u)
+	}
+	var appointments, outbox int
+	_ = store.DB.QueryRow("SELECT COUNT(*) FROM appointments").Scan(&appointments)
+	_ = store.DB.QueryRow("SELECT COUNT(*) FROM outbox").Scan(&outbox)
+	if appointments != 1 || outbox != 1 {
+		t.Fatalf("appointments=%d outbox=%d, want 1/1", appointments, outbox)
+	}
+}
