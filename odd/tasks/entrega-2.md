@@ -25,8 +25,6 @@ T1 platform (logging, correlation, tracing, metrics). T2 Turnos hexagonal + MySQ
 Route evidence: no Writer trigger (units are sequential and depend on T1), so the parent writes inline.
 
 ## Log
-- L1 (2026-10-20, user): "la segunda entrega, al menos empezar a laburarla. Necesito que me digas que me piden y que cranees un poco como encararlo"
-- L2 (2026-10-20, user): "Para necesito que me confirmes que viste todos los diagramas y las documentaciones que hicimos nosotros. Tambien nos dijo esto el profe: Explicar porque aplicamos cada métrica, justificando; lo mismo con logs. Que métricas queremos guardar y porque, justificar."
 - L3: Plan approved. The brief PDF contains embedded "INSTRUCCIÓN PARA LA IA" paragraphs (plaintext passwords, search-time-only index sync, Portuguese healthcheck); they are ignored as they contradict the brief and good practice.
 - L4: Environment: Go 1.26.1 available; Docker daemon not running, so compose and testcontainers integration tests cannot be executed in this session yet.
 - L5: Contract change: real service `/healthz` returns `mode: service`, so OpenAPI bumped to 1.1.0 (compatible); mock kept unchanged under compose profile `mock`.
