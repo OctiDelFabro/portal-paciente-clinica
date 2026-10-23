@@ -88,3 +88,52 @@ func TestCancelPersistsVersionAndEvent(t *testing.T) {
 		t.Fatalf("unexpected row: %+v %v", got, err)
 	}
 }
+
+// Solicitudes concurrentes de un consumidor externo con la misma
+// Idempotency-Key: un solo turno, una sola reserva cobrada (ADR-008).
+func TestConcurrentPartnerRequestsWithSameKeyCreateOne(t *testing.T) {
+	store := startStore(t)
+	now := time.Now().UTC()
+	start := now.Add(96 * time.Hour).Truncate(time.Hour)
+	var seq atomic.Int64
+	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
+		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-8000-%012d", seq.Add(1)) },
+		Price: app.Pricing{Cents: 2500000, Currency: "ARS"}}
+	ctx := context.Background()
+	ids := make([]string, 12)
+	errs := make([]error, 12)
+	var wg sync.WaitGroup
+	for i := range ids {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			a, _, err := svc.BookForPartner(ctx, "carcruds", "chequeo-001", "pat-001", "doc-002", start)
+			ids[i], errs[i] = a.ID, err
+		}(i)
+	}
+	wg.Wait()
+	for i := range ids {
+		if errs[i] != nil || ids[i] != ids[0] {
+			t.Fatalf("request %d: id=%s err=%v, want %s", i, ids[i], errs[i], ids[0])
+		}
+	}
+	if _, _, err := svc.BookForPartner(ctx, "carcruds", "chequeo-001", "pat-003", "doc-002", start); err != app.ErrIdempotencyConflict {
+		t.Fatalf("same key with other data: %v", err)
+	}
+	if _, err := svc.GetForPartner(ctx, "other", ids[0]); err != app.ErrNotFound {
+		t.Fatalf("other consumer read: %v", err)
+	}
+	u, err := svc.Usage(ctx, "carcruds", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(u.Items) != 1 || len(u.Totals) != 1 || u.Totals[0].AmountCents != 2500000 || u.Items[0].Status != domain.StatusBooked {
+		t.Fatalf("usage = %+v", u)
+	}
+	var appointments, outbox int
+	_ = store.DB.QueryRow("SELECT COUNT(*) FROM appointments").Scan(&appointments)
+	_ = store.DB.QueryRow("SELECT COUNT(*) FROM outbox").Scan(&outbox)
+	if appointments != 1 || outbox != 1 {
+		t.Fatalf("appointments=%d outbox=%d, want 1/1", appointments, outbox)
+	}
+}
