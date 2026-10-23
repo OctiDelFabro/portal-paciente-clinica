@@ -161,3 +161,29 @@ func TestPublicListenerHidesPortalRoutes(t *testing.T) {
 		t.Fatalf("healthz: %d", rec.Code)
 	}
 }
+
+// Trucos de path contra el listener publico: ninguno llega a una ruta interna.
+// Los dot-segments reciben 307 al path limpio (que es 404 en este mux) y las
+// variantes codificadas solo alcanzan handlers /v1 del servicio.
+func TestPublicListenerResistsPathTricks(t *testing.T) {
+	var turnosCalls, notifCalls atomic.Int32
+	turnos := upstream(200, &turnosCalls, 0)
+	defer turnos.Close()
+	notif := upstream(200, &notifCalls, 0)
+	defer notif.Close()
+	mux := publicRoutes(turnos.URL, notif.URL)
+	for _, path := range []string{"//api/turnos/appointments", "/v1/../api/turnos/appointments", "/v1/appointments/../../api/turnos/appointments", "/./api/turnos/appointments", "//metrics", "/v1/../metrics"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("POST", path, strings.NewReader("{}")))
+		if rec.Code == 200 || turnosCalls.Load() != 0 || notifCalls.Load() != 0 {
+			t.Fatalf("%s: status %d, upstream calls turnos=%d notif=%d", path, rec.Code, turnosCalls.Load(), notifCalls.Load())
+		}
+	}
+	for _, path := range []string{"/v1/%2e%2e/metrics", "/v1/appointments%2f..%2f..%2fmetrics", "/v1/%2e%2e/api/turnos/appointments"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if seen := rec.Header().Get("X-Seen-Path"); seen != "" && !strings.HasPrefix(seen, "/v1/") {
+			t.Fatalf("%s reached upstream path %q", path, seen)
+		}
+	}
+}
