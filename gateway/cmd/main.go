@@ -133,6 +133,28 @@ func proxy(name, target, stripPrefix string) http.Handler {
 	})
 }
 
+// routes arma el ruteo publico. La capacidad publicada de Turnos
+// (turnos-partner-v1) y la API de Notificaciones comparten /v1; la clave la
+// envia el consumidor y la valida cada servicio.
+func routes(turnosURL, notificationsURL string) *http.ServeMux {
+	turnos := proxy("turnos", turnosURL, "")
+	mux := http.NewServeMux()
+	mux.Handle("/api/turnos/", proxy("turnos", turnosURL, "/api/turnos"))
+	for _, path := range []string{"/v1/appointments", "/v1/appointments/", "/v1/doctors", "/v1/usage"} {
+		mux.Handle(path, turnos)
+	}
+	mux.Handle("/v1/", proxy("notifications", notificationsURL, ""))
+	mux.Handle("GET /metrics", obs.MetricsHandler())
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"service": "gateway", "status": "ok", "portalAuthImplemented": false})
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		sendError(w, 404, "NOT_FOUND", "Ruta inexistente.")
+	})
+	return mux
+}
+
 func main() {
 	obs.NewLogger("gateway")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -144,18 +166,7 @@ func main() {
 	}
 	defer shutdown(context.Background())
 
-	mux := http.NewServeMux()
-	mux.Handle("/api/turnos/", proxy("turnos", env("TURNOS_URL", "http://127.0.0.1:8081"), "/api/turnos"))
-	// Capacidad publica de Notificaciones (contrato v1); la clave la envia el consumidor.
-	mux.Handle("/v1/", proxy("notifications", env("NOTIFICATIONS_URL", "http://127.0.0.1:8085"), ""))
-	mux.Handle("GET /metrics", obs.MetricsHandler())
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"service": "gateway", "status": "ok", "portalAuthImplemented": false})
-	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		sendError(w, 404, "NOT_FOUND", "Ruta inexistente.")
-	})
+	mux := routes(env("TURNOS_URL", "http://127.0.0.1:8081"), env("NOTIFICATIONS_URL", "http://127.0.0.1:8085"))
 
 	addr := env("HTTP_ADDR", "127.0.0.1:8080")
 	server := &http.Server{Addr: addr, Handler: obs.Middleware("gateway", mux), ReadHeaderTimeout: 3 * time.Second,

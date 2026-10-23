@@ -87,3 +87,37 @@ func TestUnavailableUpstreamReturns502(t *testing.T) {
 		t.Fatalf("want 502, got %d %s", rec.Code, rec.Body)
 	}
 }
+
+// La capacidad publicada de Turnos y la de Notificaciones comparten /v1 en el
+// gateway; cada ruta debe llegar a su servicio sin cambiar el path.
+func TestPublicV1RoutesReachTheirService(t *testing.T) {
+	var turnosCalls, notifCalls atomic.Int32
+	turnos := upstream(200, &turnosCalls, 0)
+	defer turnos.Close()
+	notif := upstream(200, &notifCalls, 0)
+	defer notif.Close()
+	mux := routes(turnos.URL, notif.URL)
+	cases := []struct {
+		method, path string
+		toTurnos     bool
+	}{
+		{"POST", "/v1/appointments", true},
+		{"GET", "/v1/appointments/a1", true},
+		{"POST", "/v1/appointments/a1/cancel", true},
+		{"GET", "/v1/doctors", true},
+		{"GET", "/v1/usage", true},
+		{"GET", "/v1/templates", false},
+		{"POST", "/v1/notifications", false},
+		{"GET", "/v1/notifications/n1", false},
+	}
+	for _, c := range cases {
+		beforeT, beforeN := turnosCalls.Load(), notifCalls.Load()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, nil))
+		hitTurnos := turnosCalls.Load() == beforeT+1 && notifCalls.Load() == beforeN
+		hitNotif := notifCalls.Load() == beforeN+1 && turnosCalls.Load() == beforeT
+		if (c.toTurnos && !hitTurnos) || (!c.toTurnos && !hitNotif) || rec.Header().Get("X-Seen-Path") != c.path {
+			t.Fatalf("%s %s: turnos=%v notif=%v path=%q", c.method, c.path, hitTurnos, hitNotif, rec.Header().Get("X-Seen-Path"))
+		}
+	}
+}

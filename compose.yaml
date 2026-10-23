@@ -28,6 +28,11 @@ services:
       HTTP_ADDR: 0.0.0.0:8081
       TURNOS_DB_DSN: turnos:${TURNOS_DB_PASSWORD:?Definir TURNOS_DB_PASSWORD}@tcp(mysql:3306)/turnos
       RABBITMQ_URL: amqp://localuser:${RABBITMQ_PASSWORD:?Definir RABBITMQ_PASSWORD}@rabbitmq:5672/
+      # Capacidad publicada (docs/contracts/README.md): consumidor:clave separados por coma.
+      TURNOS_PARTNER_KEYS: ${TURNOS_PARTNER_KEYS:-}
+      TURNOS_PARTNER_PRICE_CENTS: ${TURNOS_PARTNER_PRICE_CENTS:-2500000}
+      TURNOS_PARTNER_CURRENCY: ${TURNOS_PARTNER_CURRENCY:-ARS}
+      TURNOS_PARTNER_RATE: ${TURNOS_PARTNER_RATE:-60}
     depends_on:
       mysql: {condition: service_healthy}
       rabbitmq: {condition: service_healthy}
