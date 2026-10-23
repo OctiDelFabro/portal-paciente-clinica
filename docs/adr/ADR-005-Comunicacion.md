@@ -2,6 +2,8 @@
 **Decisión D5 · Estado: diseño inicial para Entrega 1.** HTTP para consultas y comandos que necesitan respuesta; RabbitMQ para eventos internos. Los parámetros siguientes son valores técnicos iniciales para validar durante implementación.
 
 ## Contexto y decisión
+**Actualización 23/10/2026:** la capacidad publicada pasa a ser **Turnos** para el consumidor Car Cruds ([ADR-008](ADR-008-Contrato-propio.md)). Notificaciones conserva su API, pero ya no es la capacidad compartida.
+
 React/TypeScript accede por el gateway a los servicios. Los servicios consultan capacidades ajenas mediante HTTP; no leen bases de otros servicios. El grupo consumidor solicita correos por HTTP a la capacidad publicada de Notificaciones, con clave de API propia. El acceso público se publicará a través de la ruta del gateway del proveedor; el consumidor debe iniciar la llamada desde su microservicio responsable, conforme a la consigna.
 
 | Interacción | Mecanismo | Resultado esperado |

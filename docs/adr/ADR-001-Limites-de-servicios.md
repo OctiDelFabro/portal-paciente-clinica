@@ -14,7 +14,7 @@ Será propietario de los datos de pacientes, sus contactos, su estado de habilit
 Historia clínica
 Será propietario de historias clínicas y registros de atenciones. Aplicará permisos según el rol y las relaciones con el paciente. Un turno cancelado no habilita por sí mismo el acceso médico a la historia clínica. Obtendrá las validaciones necesarias mediante contratos de Pacientes y Turnos, sin consultar directamente sus bases.
 Notificaciones
-Será propietario del catálogo de plantillas, solicitudes, estados de procesamiento y avisos internos. Consumirá eventos del portal y ofrecerá al grupo consumidor una API HTTP de correos por plantillas. El detalle del contrato se registra en D8.
+Será propietario del catálogo de plantillas, solicitudes, estados de procesamiento y avisos internos. Consumirá eventos del portal y ofrecerá al grupo consumidor una API HTTP de correos por plantillas. El detalle del contrato se registra en D8. *Actualización 23/10/2026: la capacidad publicada pasó a ser Turnos ([ADR-008](ADR-008-Contrato-propio.md)); la API de Notificaciones se mantiene sin consumidor asignado.*
 Relaciones y propiedad de los datos
 El frontend React/TypeScript centralizará la interacción y accederá al backend a través del API Gateway Go/Gin. El gateway validará las credenciales y dirigirá solicitudes, mientras las reglas de negocio se ejecutarán en los servicios responsables.
 Cada servicio accederá solo a su almacenamiento propio. Las consultas entre servicios se realizarán mediante contratos, y los eventos internos utilizarán RabbitMQ. La búsqueda y la caché serán representaciones derivadas, no fuentes autoritativas para confirmar una reserva.

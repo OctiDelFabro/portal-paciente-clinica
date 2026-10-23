@@ -26,7 +26,7 @@ Frontend React/TypeScript; gateway y cinco servicios Go. Turnos, Pacientes, Méd
 - [Validación](docs/VERIFICACION.md).
 
 ## Capacidad compartida
-Solo correo por plantillas generales predefinidas. API con clave por consumidor, idempotencia y consulta de estado. El grupo consumidor, el proveedor externo y la capacidad que consumirá el portal siguen pendientes de asignación. La identidad externa no sustituye la integración con otro grupo.
+**Turnos para socios**, consumida por Car Cruds (concesionaria) para los chequeos de sus empleados: reserva, consulta y cancelación de turnos con clave por consumidor, idempotencia y facturación por reserva. Guía para el consumidor: [docs/contracts/README.md](docs/contracts/README.md). La API de correos (Notificaciones) sigue disponible, sin consumidor asignado. El proveedor externo que consumirá el portal sigue pendiente. La identidad externa no sustituye la integración con otro grupo.
 
 ## Puesta en marcha local
 Requisitos: Docker con Compose. Para desarrollo sin contenedores: Go 1.26 o posterior.
@@ -57,7 +57,8 @@ API de Turnos: `POST /api/turnos/appointments`, `GET /api/turnos/appointments/{i
 **Pruebas**
 - Unitarias: `go test ./...`
 - Integración contra MySQL y RabbitMQ reales (requiere Docker): `go test -tags integration ./...`
-- Contrato del mock: `python scripts/check_contract.py`
+- Contrato de la capacidad publicada (con el stack levantado y `TURNOS_PARTNER_KEYS` definida): `python scripts/check_turnos_contract.py`
+- Contrato del mock de Notificaciones: `python scripts/check_contract.py`
 
 El mock en memoria sigue disponible para el grupo consumidor con `docker compose --profile mock up notifications-mock` (puerto 8086). Pacientes, Médicos e Historia clínica siguen como esqueletos con `/healthz`. Frontend: ver `frontend/README.md`.
 No existe despliegue público verificado ni URL de producción.

@@ -8,7 +8,8 @@ Pruebas de carga con **k6** contra el gateway, con el stack completo de `docker 
 |---|---|---|
 | Pico de reservas | Rampa de 0 a 50 usuarios virtuales en 2 min, 60 % sobre el mismo médico | Contención (`booking_lock_wait_seconds`), 409 correctos, p95 de reserva |
 | Lectura de disponibilidad | 200 solicitudes/s durante 3 min, con y sin caché | Impacto de D7 (antes/después) |
-| API pública de Notificaciones | 60 solicitudes/min por consumidor, con replays | Rate limit, idempotencia y acumulación de correos |
+| API publicada de Turnos | 60 solicitudes/min por consumidor, con replays y claves repetidas en paralelo | Rate limit, un turno y un cargo por clave, p95 de reserva con contención del mismo médico |
+| API de Notificaciones | 60 solicitudes/min por consumidor, con replays | Rate limit, idempotencia y acumulación de correos |
 | Caída durante carga | Pico de reservas con RabbitMQ detenido 2 min | D10 y `POSTMORTEM.md` |
 
 Resultados a documentar por escenario: solicitudes/s sostenidas, p50/p95/p99, tasa de errores por código, uso de CPU y memoria por contenedor, y el primer recurso que se satura.
@@ -23,9 +24,12 @@ El cuello esperado **no es la CPU de Turnos**: es la serialización por médico 
 4. **Cola de reservas por médico:** solo si las anteriores no alcanzan; cambia la experiencia a asíncrona.
 
 ## Estimación de costos inicial (a validar)
-Despliegue mínimo de la capacidad pública (Notificaciones + MySQL + gateway) para la presentación:
+Despliegue mínimo de la capacidad publicada (Turnos + MySQL + RabbitMQ + Notificaciones + gateway) para la presentación:
 - Una VM pequeña (2 vCPU, 4 GB) con Docker Compose, o el plan gratuito o de estudiantes de un proveedor de contenedores.
 - MySQL en la misma VM para el TP; en producción, una base gestionada pasaría a ser el principal costo fijo.
 - Correo: plan gratuito de un proveedor transaccional; el volumen del TP es bajo.
 
 Los montos se confirmarán con las tarifas vigentes del proveedor elegido al desplegar.
+
+## Tarifa al consumidor (23/10/2026)
+La capacidad publicada se cobra **por reserva creada**: precio inicial ARS 25.000,00 (`TURNOS_PARTNER_PRICE_CENTS=2500000`), a confirmar con Car Cruds. Por qué esta unidad: una reserva es lo que consume capacidad escasa (la agenda del médico y el bloqueo en MySQL de D4) y lo que el consumidor obtiene de valor; las consultas y los reintentos son baratos, y cobrarlos castigaría el comportamiento correcto ante fallas. El precio se guarda en cada reserva y `GET /v1/usage` permite conciliar los cargos. El monto todavía no se deriva de costos medidos: cuando haya resultados de carga, se verificará que cubra el costo de infraestructura por reserva al volumen esperado. Reglas en [ADR-008](ADR-008-Contrato-propio.md).

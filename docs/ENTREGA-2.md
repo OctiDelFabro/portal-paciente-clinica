@@ -7,7 +7,7 @@ Referencia: enunciado, sección 6.3, entrega del viernes 23 de octubre: "Dominio
 | Exigencia | Estado | Dónde verlo |
 |---|---|---|
 | Al menos un servicio operativo | **Turnos**: reserva, consulta y cancelación con las reglas de RF-02/RF-03 | `services/turnos`, README → Puesta en marcha |
-| Funcionalidad compartida funcionando | **Notificaciones real** reemplaza al mock con el mismo contrato (1.1.0, compatible) | `services/notifications`, `docs/contracts/README.md` |
+| Funcionalidad compartida funcionando | **Turnos para socios** (contrato 1.0.0) para Car Cruds: clave por consumidor, idempotencia, aislamiento y facturación por reserva. Verificado con `scripts/check_turnos_contract.py` contra el stack (21 verificaciones). Notificaciones real sigue operativa como servicio interno. | `docs/contracts/README.md`, ADR-008, `services/turnos/internal/adapters/httpapi/partner.go` |
 | Almacenamiento integrado al flujo | **MySQL** en Turnos (turnos, bloqueos, outbox) y en Notificaciones (solicitudes, idempotencia, inbox, avisos) | ADR-003 → Validación |
 | Logs estructurados y correlacionados | JSON con `correlation_id`, `trace_id`, `event` | ADR-011 → Logs |
 | Primera traza distribuida del flujo principal | gateway → turnos → publish → consume → send email | Jaeger, ADR-011 → Trazas |
