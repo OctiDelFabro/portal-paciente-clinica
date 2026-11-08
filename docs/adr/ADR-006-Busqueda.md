@@ -1,5 +1,5 @@
 # ADR-006 — Búsqueda de médicos
-**Decisión D6 · Estado: aceptada; implementación prevista para la presentación final.** OpenSearch indexa los perfiles de médicos de forma derivada desde Médicos (MySQL), sincronizado por eventos, con reconstrucción completa disponible.
+**Decisión D6 · Estado: implementada (presentación final), con los desvíos registrados al final.** OpenSearch indexa los perfiles de médicos de forma derivada desde Médicos (MySQL), sincronizado por eventos, con reconstrucción completa disponible.
 
 ## Contexto
 RF-01: el paciente busca médicos y especialidades. El enunciado pide un motor de búsqueda con paginación, filtros y orden, con el índice sincronizado con los cambios y un retraso máximo definido. Médicos es dueño de los perfiles (D1); MySQL es la fuente autoritativa (D3).
@@ -40,3 +40,16 @@ Justificación: los perfiles cambian poco. Ver una especialidad desactualizada d
 - Consistencia eventual: un cambio tarda hasta el retraso acordado en aparecer.
 - Si OpenSearch cae, la búsqueda responde 503 con un mensaje claro y el resto del portal sigue funcionando. Las reservas no dependen del índice.
 - Operar OpenSearch tiene costo de memoria (512 MB en local).
+
+## Implementación y desvíos
+Código en `services/medicos` (ver su README). Se respetan el índice, el alias, los filtros, el orden, los límites de paginación, la outbox, la reconstrucción y la métrica `search_index_lag_seconds`. Desvíos respecto de lo decidido arriba:
+
+| Desvío | Motivo |
+|---|---|
+| `version_type=external_gte` en lugar de `external`. | `nextAvailableAt` cambia sin que cambie el perfil. Con `external` estricto, una actualización de disponibilidad con el mismo `profileVersion` se rechazaría. `external_gte` igual impide que un perfil más viejo pise uno nuevo. |
+| El indexador relee el estado actual en MySQL en vez de usar el contenido del evento. | Un evento repetido o fuera de orden termina escribiendo el último estado, así el consumidor es idempotente sin tabla inbox. |
+| Más allá de `from + size` = 1000 se responde 422; no se implementó `search_after`. | Con el volumen de médicos de la clínica alcanza con refinar los filtros. Queda como deuda. |
+| `nextAvailableAt` es aproximado: primer instante desde ahora + 24 h que no cae en un turno activo conocido. Ignora el horario de atención. | La agenda y los horarios pertenecen a Turnos (D1). Médicos arma una proyección local (`doctor_bookings`) con `turnos.reservado.v1` y `turnos.cancelado.v1` y no duplica la agenda. El valor se recalcula solo ante un evento o una reconstrucción, así que envejece con el paso del tiempo. Reemplazo previsto: consultar la disponibilidad de Turnos (D7). |
+| La reconstrucción existe como comando (`medicos reindex`) y como `POST /admin/reindex` (rol admin). En el primer arranque se crea `doctors-v1` sola. | Operación y demo sin acceso al contenedor. Un cambio confirmado entre la lectura de MySQL y el cambio de alias puede quedar fuera del índice nuevo hasta el próximo evento de ese médico o la próxima reconstrucción. |
+| Los nombres y especialidades semilla los define Médicos; los IDs (`doc-001`, `doc-002`) son los mismos que acepta Turnos. | El semilla de Turnos solo tiene IDs y duraciones. Un test compara ambos conjuntos de IDs. |
+| El relay de la outbox replica el de Turnos en lugar de compartirlo. | Está en `services/turnos/internal` y Go no permite importarlo desde otro servicio. Moverlo a `internal/platform` queda como deuda. |
