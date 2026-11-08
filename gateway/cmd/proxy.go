@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/textproto"
 	"net/url"
 	"os"
 	"strings"
@@ -313,6 +314,17 @@ func poolProxy(p *pool, stripPrefix string) http.Handler {
 		if r.Header = r.Header.Clone(); r.Header == nil {
 			r.Header = http.Header{}
 		}
+		// ReverseProxy deletes every header the client names in Connection
+		// after this handler runs; drop those names here so a client cannot
+		// use them to erase the identity set below.
+		for _, v := range r.Header.Values("Connection") {
+			for _, f := range strings.Split(v, ",") {
+				if f = textproto.TrimString(f); f != "" {
+					r.Header.Del(f)
+				}
+			}
+		}
+		r.Header.Del("Connection")
 		r.Header.Del(patientHeader)
 		r.Header.Del(roleHeader)
 		if id, ok := identityFrom(ctx); ok {

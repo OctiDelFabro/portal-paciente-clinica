@@ -58,6 +58,9 @@ func newAuthenticator(secret string) (*authenticator, error) {
 	return &authenticator{secret: []byte(secret)}, nil
 }
 
+// knownRoles are the portal roles Pacientes issues; anything else is rejected.
+var knownRoles = map[string]bool{"patient": true, "doctor": true}
+
 type portalClaims struct {
 	Role string `json:"role"`
 	jwt.RegisteredClaims
@@ -72,11 +75,11 @@ func (a *authenticator) verify(raw string) (identity, error) {
 			return nil, errors.New("unexpected signing method")
 		}
 		return a.secret, nil
-	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer(tokenIssuer), jwt.WithExpirationRequired())
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer(tokenIssuer), jwt.WithExpirationRequired(), jwt.WithIssuedAt())
 	if err != nil {
 		return identity{}, err
 	}
-	if !safeClaim.MatchString(c.Subject) || !safeClaim.MatchString(c.Role) {
+	if !safeClaim.MatchString(c.Subject) || !knownRoles[c.Role] {
 		return identity{}, errInvalidClaims
 	}
 	return identity{subject: c.Subject, role: c.Role}, nil

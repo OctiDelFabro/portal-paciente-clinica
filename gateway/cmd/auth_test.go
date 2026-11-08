@@ -330,3 +330,44 @@ func metricsText(t *testing.T, cfg config) string {
 	b, _ := io.ReadAll(rec.Body)
 	return string(b)
 }
+
+// Regression (verifier B1): httputil.ReverseProxy drops every header named in
+// the client's Connection header, which used to erase the identity the gateway
+// had just set.
+func TestConnectionHeaderCannotDropIdentity(t *testing.T) {
+	s := newStack(t)
+	h := s.cfg.internalHandler()
+	tok := validToken(t, "pat-001")
+	for _, conn := range []string{"X-Patient-Id", "x-patient-id, X-User-Role", "close, X-Patient-Id"} {
+		rec := do(h, "GET", "/api/pacientes/patients/pat-002/contact", tok, "Connection", conn)
+		if rec.Code != 200 || s.pacientes.seen(&s.pacientes.patient) != "pat-001" || s.pacientes.seen(&s.pacientes.role) != "patient" {
+			t.Errorf("pacientes, Connection: %s -> %d patient=%q role=%q", conn, rec.Code, s.pacientes.seen(&s.pacientes.patient), s.pacientes.seen(&s.pacientes.role))
+		}
+		rec = do(h, "GET", "/api/turnos/appointments", tok, "Connection", conn)
+		if rec.Code != 200 || s.turnos.seen(&s.turnos.patient) != "pat-001" {
+			t.Errorf("turnos, Connection: %s -> %d patient=%q", conn, rec.Code, s.turnos.seen(&s.turnos.patient))
+		}
+	}
+}
+
+func TestTokenIssuedInTheFutureIsRejected(t *testing.T) {
+	s := newStack(t)
+	c := validClaims()
+	c["iat"] = time.Now().Add(time.Hour).Unix()
+	rec := do(s.cfg.internalHandler(), "GET", "/api/turnos/appointments", signHS(t, jwt.SigningMethodHS256, c, testSecret))
+	if rec.Code != 401 || s.turnos.calls.Load() != 0 {
+		t.Fatalf("future iat: status %d, upstream calls %d", rec.Code, s.turnos.calls.Load())
+	}
+}
+
+func TestOnlyKnownRolesAreAccepted(t *testing.T) {
+	for role, want := range map[string]int{"patient": 200, "doctor": 200, "admin": 401, "reception": 401} {
+		s := newStack(t)
+		c := validClaims()
+		c["role"] = role
+		rec := do(s.cfg.internalHandler(), "GET", "/api/turnos/appointments", signHS(t, jwt.SigningMethodHS256, c, testSecret))
+		if rec.Code != want {
+			t.Errorf("role %q: status %d, want %d", role, rec.Code, want)
+		}
+	}
+}
