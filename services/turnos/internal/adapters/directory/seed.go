@@ -14,9 +14,13 @@ import (
 
 type Seed struct{}
 
-var doctors = map[string]time.Duration{
-	"doc-001": 30 * time.Minute,
-	"doc-002": 20 * time.Minute,
+var workdays = []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday}
+
+// doctors: appointment duration and weekly schedule (clinic time) that
+// availability uses (ADR-007). Booking keeps validating only lead time and overlaps.
+var doctors = map[string]domain.Doctor{
+	"doc-001": {ID: "doc-001", Duration: 30 * time.Minute, Schedule: domain.Schedule{Weekdays: workdays, Open: 9 * time.Hour, Close: 13 * time.Hour}},
+	"doc-002": {ID: "doc-002", Duration: 20 * time.Minute, Schedule: domain.Schedule{Weekdays: workdays, Open: 14 * time.Hour, Close: 18 * time.Hour}},
 }
 
 // pat-002 representa una cuenta registrada pero no habilitada por recepcion (RF-13).
@@ -31,13 +35,13 @@ func (Seed) Doctor(_ context.Context, id string) (domain.Doctor, error) {
 	if !ok {
 		return domain.Doctor{}, app.ErrUnknownDoctor
 	}
-	return domain.Doctor{ID: id, Duration: d}, nil
+	return d, nil
 }
 
 func (Seed) Doctors(context.Context) ([]domain.Doctor, error) {
 	out := make([]domain.Doctor, 0, len(doctors))
-	for id, d := range doctors {
-		out = append(out, domain.Doctor{ID: id, Duration: d})
+	for _, d := range doctors {
+		out = append(out, d)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil

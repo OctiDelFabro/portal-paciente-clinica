@@ -46,6 +46,7 @@ func (a Appointment) Overlaps(start, end time.Time) bool {
 type Doctor struct {
 	ID       string
 	Duration time.Duration
+	Schedule Schedule
 }
 
 // Patient reune el estado de habilitacion definido en RF-13.

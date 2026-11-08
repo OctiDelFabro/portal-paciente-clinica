@@ -13,15 +13,44 @@ import (
 	"portal-paciente-clinica/services/turnos/internal/domain"
 )
 
-type fakeUC struct{ err error }
+// fakeUC records which use case ran (and for which patient) when calls is set.
+type fakeUC struct {
+	err   error
+	calls *[]string
+}
+
+func (f fakeUC) record(call string) {
+	if f.calls != nil {
+		*f.calls = append(*f.calls, call)
+	}
+}
 
 func (f fakeUC) Book(_ context.Context, p, d string, s time.Time) (domain.Appointment, error) {
+	f.record("Book:" + p)
 	return domain.Appointment{ID: "a-1", PatientID: p, DoctorID: d, StartAt: s, EndAt: s.Add(30 * time.Minute), Status: domain.StatusBooked, Version: 1}, f.err
 }
 func (f fakeUC) Cancel(context.Context, string, string) (domain.Appointment, error) {
+	f.record("Cancel")
 	return domain.Appointment{}, f.err
 }
 func (f fakeUC) Get(context.Context, string) (domain.Appointment, error) {
+	f.record("Get")
+	return domain.Appointment{}, f.err
+}
+func (f fakeUC) BookForPatient(ctx context.Context, p, d string, s time.Time) (domain.Appointment, error) {
+	f.record("BookForPatient:" + p)
+	return domain.Appointment{ID: "a-1", PatientID: p, DoctorID: d, StartAt: s, EndAt: s.Add(30 * time.Minute), Status: domain.StatusBooked, Version: 1}, f.err
+}
+func (f fakeUC) ListForPatient(_ context.Context, p string) ([]domain.Appointment, error) {
+	f.record("ListForPatient:" + p)
+	return []domain.Appointment{{ID: "a-1", PatientID: p, DoctorID: "doc-001", Status: domain.StatusBooked, Version: 1}}, f.err
+}
+func (f fakeUC) GetForPatient(_ context.Context, p, _ string) (domain.Appointment, error) {
+	f.record("GetForPatient:" + p)
+	return domain.Appointment{}, f.err
+}
+func (f fakeUC) CancelForPatient(_ context.Context, p, _, _ string) (domain.Appointment, error) {
+	f.record("CancelForPatient:" + p)
 	return domain.Appointment{}, f.err
 }
 

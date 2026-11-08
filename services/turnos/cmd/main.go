@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"portal-paciente-clinica/services/turnos/internal/adapters/httpapi"
 	"portal-paciente-clinica/services/turnos/internal/adapters/mysqlstore"
 	"portal-paciente-clinica/services/turnos/internal/adapters/outbox"
+	"portal-paciente-clinica/services/turnos/internal/adapters/rediscache"
 	"portal-paciente-clinica/services/turnos/internal/app"
 )
 
@@ -44,6 +44,33 @@ func partnerConfig() (map[string]string, app.Pricing, int) {
 		os.Exit(1)
 	}
 	return keys, app.Pricing{Cents: cents, Currency: currency}, rate
+}
+
+// instanceID identifies this replica in X-Instance (ADR-012); compose sets
+// INSTANCE_ID equal to the container hostname so it matches the log field.
+func instanceID() string {
+	if id := os.Getenv("INSTANCE_ID"); id != "" {
+		return id
+	}
+	host, _ := os.Hostname()
+	return host
+}
+
+// availabilityQuery applies ADR-007: with CACHE_ENABLED=true (default) reads go
+// through Redis cache-aside; with false every read goes to MySQL (k6 baseline).
+func availabilityQuery(svc *app.Service) (app.AvailabilityQuery, func()) {
+	enabled, err := strconv.ParseBool(env("CACHE_ENABLED", "true"))
+	if err != nil {
+		slog.Error("invalid CACHE_ENABLED: want true or false")
+		os.Exit(1)
+	}
+	if !enabled {
+		slog.Info("availability cache disabled", "event", "cache.disabled")
+		return svc, func() {}
+	}
+	cache := rediscache.New(env("REDIS_ADDR", "127.0.0.1:6379"), svc)
+	svc.Cache = cache
+	return cache, func() { _ = cache.Close() }
 }
 
 func main() {
@@ -82,22 +109,17 @@ func main() {
 
 	keys, price, rate := partnerConfig()
 	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: time.Now, NewID: obs.NewID, Price: price}
+	query, closeCache := availabilityQuery(svc)
+	defer closeCache()
 	mux := http.NewServeMux()
 	httpapi.Register(mux, svc)
+	httpapi.RegisterAvailability(mux, query)
 	(&httpapi.Partner{UseCases: svc, Keys: keys, Limiter: &apikey.Limiter{Rate: rate}, Price: price, Now: time.Now}).Register(mux)
 	mux.Handle("GET /metrics", obs.MetricsHandler())
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		status, code := "ok", 200
-		if err := store.DB.PingContext(r.Context()); err != nil {
-			status, code = "degraded", 503
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(code)
-		_ = json.NewEncoder(w).Encode(map[string]string{"service": "turnos", "status": status})
-	})
+	mux.Handle("GET /healthz", httpapi.Health(store.DB.PingContext))
 
 	addr := env("HTTP_ADDR", "127.0.0.1:8081")
-	server := &http.Server{Addr: addr, Handler: obs.Middleware("turnos", mux), ReadHeaderTimeout: 3 * time.Second,
+	server := &http.Server{Addr: addr, Handler: httpapi.WithInstance(instanceID(), obs.Middleware("turnos", mux)), ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	go func() {
 		<-ctx.Done()

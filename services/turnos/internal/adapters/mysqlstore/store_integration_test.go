@@ -137,3 +137,43 @@ func TestConcurrentPartnerRequestsWithSameKeyCreateOne(t *testing.T) {
 		t.Fatalf("appointments=%d outbox=%d, want 1/1", appointments, outbox)
 	}
 }
+
+// nextWorkday returns local midnight of the first weekday at least two days ahead.
+func nextWorkday(now time.Time) time.Time {
+	d := now.In(domain.ClinicZone).AddDate(0, 0, 2)
+	d = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, domain.ClinicZone)
+	for d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+		d = d.AddDate(0, 0, 1)
+	}
+	return d
+}
+
+// A slot listed as free is bookable, then disappears from availability, and
+// the authenticated patient sees it in their list (ADR-007).
+func TestAvailabilitySlotIsBookableAndThenListed(t *testing.T) {
+	store := startStore(t)
+	now := time.Now().UTC()
+	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
+		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-a000-%012d", idSeq.Add(1)) }}
+	ctx := context.Background()
+	day := nextWorkday(now)
+	before, err := svc.Availability(ctx, "doc-001", day)
+	if err != nil || len(before.Slots) == 0 {
+		t.Fatalf("no availability: %+v %v", before, err)
+	}
+	a, err := svc.BookForPatient(ctx, "jwt-patient-1", "doc-001", before.Slots[0].StartAt)
+	if err != nil {
+		t.Fatalf("free slot rejected: %v", err)
+	}
+	after, err := svc.Availability(ctx, "doc-001", day)
+	if err != nil || len(after.Slots) != len(before.Slots)-1 || after.Slots[0].StartAt.Equal(a.StartAt) {
+		t.Fatalf("booked slot still free: before=%d after=%+v", len(before.Slots), after)
+	}
+	list, err := svc.ListForPatient(ctx, "jwt-patient-1")
+	if err != nil || len(list) != 1 || list[0].ID != a.ID {
+		t.Fatalf("list = %+v %v", list, err)
+	}
+	if _, err := svc.GetForPatient(ctx, "pat-001", a.ID); err != app.ErrNotFound {
+		t.Fatalf("other patient read: %v", err)
+	}
+}

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -52,6 +54,29 @@ func (s *memStore) Get(ctx context.Context, id string) (domain.Appointment, erro
 	}
 	return a, nil
 }
+func (s *memStore) ActiveForDoctor(_ context.Context, doctorID string, from, to time.Time) ([]domain.Appointment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []domain.Appointment
+	for _, a := range s.rows {
+		if a.DoctorID == doctorID && a.Overlaps(from, to) {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+func (s *memStore) ListByPatient(_ context.Context, patientID string) ([]domain.Appointment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []domain.Appointment{}
+	for _, a := range s.rows {
+		if a.PatientID == patientID {
+			out = append(out, a)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartAt.After(out[j].StartAt) })
+	return out, nil
+}
 func (t memTx) LockResources(context.Context, ...string) error { return nil }
 func (t memTx) FindActiveOverlapping(_ context.Context, doctorID, patientID string, start, end time.Time) ([]domain.Appointment, error) {
 	var out []domain.Appointment
@@ -78,16 +103,29 @@ func (t memTx) AppendOutbox(_ context.Context, m OutboxMessage) error {
 
 type seedDirectory struct{}
 
+var testDoctor = domain.Doctor{ID: "d-1", Duration: 30 * time.Minute, Schedule: domain.Schedule{
+	Weekdays: []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday},
+	Open:     9 * time.Hour, Close: 11 * time.Hour}}
+
 func (seedDirectory) Doctor(_ context.Context, id string) (domain.Doctor, error) {
 	if id != "d-1" {
 		return domain.Doctor{}, ErrUnknownDoctor
 	}
-	return domain.Doctor{ID: id, Duration: 30 * time.Minute}, nil
+	return testDoctor, nil
 }
 func (seedDirectory) Doctors(context.Context) ([]domain.Doctor, error) {
-	return []domain.Doctor{{ID: "d-1", Duration: 30 * time.Minute}}, nil
+	return []domain.Doctor{testDoctor}, nil
 }
+
+// Patients prefixed "unknown-" are missing from the directory and "disabled-"
+// ones are not enabled by reception; every other patient is enabled.
 func (seedDirectory) Patient(_ context.Context, id string) (domain.Patient, error) {
+	switch {
+	case strings.HasPrefix(id, "unknown-"):
+		return domain.Patient{}, ErrUnknownPatient
+	case strings.HasPrefix(id, "disabled-"):
+		return domain.Patient{ID: id, Enabled: false}, nil
+	}
 	return domain.Patient{ID: id, Enabled: true}, nil
 }
 

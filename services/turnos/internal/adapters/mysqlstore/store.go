@@ -141,11 +141,15 @@ func (t *mysqlTx) FindActiveOverlapping(ctx context.Context, doctorID, patientID
 	rows, err := t.tx.QueryContext(ctx, "SELECT "+columns+` FROM appointments
 		WHERE status = 'booked' AND (doctor_id = ? OR patient_id = ?) AND start_at < ? AND end_at > ?`,
 		doctorID, patientID, end.UTC(), start.UTC())
+	return scanAll(rows, err)
+}
+
+func scanAll(rows *sql.Rows, err error) ([]domain.Appointment, error) {
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []domain.Appointment
+	out := []domain.Appointment{}
 	for rows.Next() {
 		a, err := scan(rows)
 		if err != nil {
@@ -154,6 +158,25 @@ func (t *mysqlTx) FindActiveOverlapping(ctx context.Context, doctorID, patientID
 		out = append(out, a)
 	}
 	return out, rows.Err()
+}
+
+// ActiveForDoctor is the availability read: a plain consistent read, no locks,
+// so it never waits behind bookings (ADR-007). Uses idx_doctor_time.
+func (s *Store) ActiveForDoctor(ctx context.Context, doctorID string, from, to time.Time) ([]domain.Appointment, error) {
+	rows, err := s.DB.QueryContext(ctx, "SELECT "+columns+` FROM appointments
+		WHERE doctor_id = ? AND status = 'booked' AND start_at < ? AND end_at > ? ORDER BY start_at`,
+		doctorID, to.UTC(), from.UTC())
+	return scanAll(rows, err)
+}
+
+// listLimit bounds "my appointments"; the portal has no pagination yet.
+const listLimit = 100
+
+// ListByPatient returns the most recent appointments of the patient (any status).
+func (s *Store) ListByPatient(ctx context.Context, patientID string) ([]domain.Appointment, error) {
+	rows, err := s.DB.QueryContext(ctx, "SELECT "+columns+` FROM appointments
+		WHERE patient_id = ? ORDER BY start_at DESC, id LIMIT ?`, patientID, listLimit)
+	return scanAll(rows, err)
 }
 
 func (t *mysqlTx) GetForUpdate(ctx context.Context, id string) (domain.Appointment, error) {

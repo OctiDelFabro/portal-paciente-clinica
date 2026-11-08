@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,6 +36,28 @@ type UseCases interface {
 	Book(ctx context.Context, patientID, doctorID string, startAt time.Time) (domain.Appointment, error)
 	Cancel(ctx context.Context, id, reason string) (domain.Appointment, error)
 	Get(ctx context.Context, id string) (domain.Appointment, error)
+	BookForPatient(ctx context.Context, patientID, doctorID string, startAt time.Time) (domain.Appointment, error)
+	ListForPatient(ctx context.Context, patientID string) ([]domain.Appointment, error)
+	GetForPatient(ctx context.Context, patientID, id string) (domain.Appointment, error)
+	CancelForPatient(ctx context.Context, patientID, id, reason string) (domain.Appointment, error)
+}
+
+// PatientHeader carries the patient authenticated by the gateway (validated
+// JWT). The gateway strips client-supplied copies, so it is trusted here.
+const PatientHeader = "X-Patient-Id"
+
+// patientIDShape matches appointments.patient_id (VARCHAR(64)).
+var patientIDShape = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
+
+// authPatient reads PatientHeader. Absent: ok with id "". Present but
+// malformed: replies 401 and returns ok=false.
+func authPatient(w http.ResponseWriter, r *http.Request) (id string, ok bool) {
+	id = r.Header.Get(PatientHeader)
+	if id != "" && !patientIDShape.MatchString(id) {
+		sendError(w, 401, "UNAUTHORIZED", "Identidad de paciente invalida.")
+		return "", false
+	}
+	return id, true
 }
 
 type appointmentDTO struct {
@@ -59,15 +82,28 @@ func Register(mux *http.ServeMux, uc UseCases) {
 			DoctorID  string `json:"doctorId"`
 			StartAt   string `json:"startAt"`
 		}
-		if !decode(w, r, &in) {
+		patient, ok := authPatient(w, r)
+		if !ok || !decode(w, r, &in) {
 			return
+		}
+		if patient != "" {
+			if in.PatientID != "" && in.PatientID != patient {
+				sendError(w, 403, "PATIENT_MISMATCH", "Solo puede reservar turnos para el paciente autenticado.")
+				return
+			}
+			in.PatientID = patient
 		}
 		start, err := time.Parse(time.RFC3339, in.StartAt)
 		if err != nil || in.PatientID == "" || in.DoctorID == "" {
 			sendError(w, 400, "INVALID_REQUEST", "patientId, doctorId y startAt (RFC3339) son obligatorios.")
 			return
 		}
-		a, err := uc.Book(r.Context(), in.PatientID, in.DoctorID, start)
+		var a domain.Appointment
+		if patient != "" {
+			a, err = uc.BookForPatient(r.Context(), patient, in.DoctorID, start)
+		} else {
+			a, err = uc.Book(r.Context(), in.PatientID, in.DoctorID, start)
+		}
 		if err != nil {
 			rejected.WithLabelValues(app.RejectReason(err)).Inc()
 			mapError(w, err)
@@ -77,8 +113,38 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		w.Header().Set("Location", "/appointments/"+a.ID)
 		sendJSON(w, 201, toDTO(a))
 	})
+	mux.HandleFunc("GET /appointments", func(w http.ResponseWriter, r *http.Request) {
+		patient, ok := authPatient(w, r)
+		if !ok {
+			return
+		}
+		if patient == "" {
+			sendError(w, 401, "UNAUTHORIZED", "Se requiere un paciente autenticado.")
+			return
+		}
+		list, err := uc.ListForPatient(r.Context(), patient)
+		if err != nil {
+			mapError(w, err)
+			return
+		}
+		out := make([]appointmentDTO, 0, len(list))
+		for _, a := range list {
+			out = append(out, toDTO(a))
+		}
+		sendJSON(w, 200, map[string]any{"appointments": out})
+	})
 	mux.HandleFunc("GET /appointments/{id}", func(w http.ResponseWriter, r *http.Request) {
-		a, err := uc.Get(r.Context(), r.PathValue("id"))
+		patient, ok := authPatient(w, r)
+		if !ok {
+			return
+		}
+		var a domain.Appointment
+		var err error
+		if patient != "" {
+			a, err = uc.GetForPatient(r.Context(), patient, r.PathValue("id"))
+		} else {
+			a, err = uc.Get(r.Context(), r.PathValue("id"))
+		}
 		if err != nil {
 			mapError(w, err)
 			return
@@ -89,6 +155,10 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		var in struct {
 			Reason string `json:"reason"`
 		}
+		patient, ok := authPatient(w, r)
+		if !ok {
+			return
+		}
 		if r.ContentLength != 0 && !decode(w, r, &in) {
 			return
 		}
@@ -96,7 +166,13 @@ func Register(mux *http.ServeMux, uc UseCases) {
 			sendError(w, 400, "INVALID_REQUEST", "reason admite hasta 32 caracteres.")
 			return
 		}
-		a, err := uc.Cancel(r.Context(), r.PathValue("id"), in.Reason)
+		var a domain.Appointment
+		var err error
+		if patient != "" {
+			a, err = uc.CancelForPatient(r.Context(), patient, r.PathValue("id"), in.Reason)
+		} else {
+			a, err = uc.Cancel(r.Context(), r.PathValue("id"), in.Reason)
+		}
 		if err != nil {
 			mapError(w, err)
 			return

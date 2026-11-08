@@ -93,7 +93,7 @@ func (s *Service) BookForPartner(ctx context.Context, consumer, key, patientID, 
 	case !errors.Is(err, ErrNotFound):
 		return domain.Appointment{}, false, err
 	}
-	a, replayed, err := s.book(ctx, patientID, doctorID, startAt, &pb)
+	a, replayed, err := s.book(ctx, patientID, doctorID, startAt, &pb, false)
 	if err == nil && !replayed {
 		slog.InfoContext(ctx, "partner booking billed", "event", "partner.booking_billed", "consumer", consumer,
 			"appointment_id", a.ID, "price_cents", pb.PriceCents, "currency", pb.Currency)
