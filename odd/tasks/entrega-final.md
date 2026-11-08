@@ -17,7 +17,7 @@ Brief, section 6 "Presentacion Grupal" (quoted verbatim):
 - S11 — "sección de limitaciones conocidas y deuda técnica aceptada, actualizada en la descripción de la arquitectura (`docs/ARCHITECTURE.md`)"
 - S12 — Balancing (2.3, ADR-012): Turnos in two or more instances, gateway round-robin among healthy ones, distribution visible in observability.
 - S13 — Load tests (2.11, ADR-013) with documented results; k6 before/after cache (ADR-007).
-- S14 — Provider: group "ArquitecturasoftwareRenewableEnergy", `POST /api/v1/estimaciones-consumo`, contract 1.0.1, `X-API-Key`. Returns kWh only; the cost in ARS is computed on our side with our own tariff. Consuming flow: open decision (see Log).
+- S14 — Provider: group "ArquitecturasoftwareRenewableEnergy", `POST /api/v1/estimaciones-consumo`, contract 1.0.1, `X-API-Key`. Returns kWh only; the cost in ARS is computed on our side with our own tariff. Consuming flow (L6): Turnos adds the energy cost of the consultation's equipment to the appointment price shown before confirming; on provider failure the booking proceeds with energy cost "pending".
 - Assumption A1: portal identity is our own: Pacientes issues JWT (HS256, `JWT_SECRET` from env), the gateway validates it. Documented in a new ADR-014.
 - Assumption A2: cloud target pending (Oracle E2.1.Micro or Azure for Students); fallback Cloudflare tunnel exposing only 8088.
 
@@ -45,3 +45,4 @@ Route evidence: T1–T5 run as parallel writers (Writer trigger (a)): five indep
 - L3: Provider repo reviewed (main @ 0ae9918, CI green): real Go implementation running locally, cloud URL pending. A message for the provider group was drafted (URL, M2M key, frozen v1, rate limit).
 - L4: Cloud: Render Free sleeps after 15 min (about 1 min cold start) and has no free MySQL; Oracle ARM capacity unavailable for the user. Decision deferred by the user; code work continues.
 - L5: Open decision: which microservice and business flow consumes the provider's energy estimate (S14).
+- L6 (2026-11-08): Decision: appointment cost. When booking, Turnos asks the provider for the kWh of the equipment that consultation uses and adds the energy cost (kWh × own tariff) to the appointment price shown before confirming. If the provider fails, the booking still succeeds and the energy cost stays "pending" (controlled degradation). T8 starts after T2 to avoid editing services/turnos concurrently.
