@@ -1,44 +1,24 @@
-// Gateway: punto de entrada unico. Direcciona, propaga correlacion y trazas y
-// aplica los tiempos de espera de ADR-005. La autenticacion del portal se
-// incorpora en la presentacion final; no expone API keys al frontend.
+// Gateway: punto de entrada unico del portal. Autentica (JWT emitido por
+// Pacientes, ADR-014), limita el trafico por paciente o IP, direcciona,
+// balancea Turnos entre instancias sanas (ADR-012), propaga correlacion y
+// trazas y aplica los tiempos de espera de ADR-005. No expone API keys al
+// frontend.
 package main
 
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
-	"math/rand/v2"
-	"net"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-
 	"portal-paciente-clinica/internal/platform/obs"
 )
-
-const (
-	requestBudget = 5 * time.Second
-	upstreamLimit = 2 * time.Second
-)
-
-var upstreamErrors = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "gateway_upstream_errors_total",
-	Help: "Fallas al llamar a un servicio interno, por servicio y tipo (timeout, unavailable).",
-}, []string{"upstream", "kind"})
-
-var retries = promauto.NewCounterVec(prometheus.CounterOpts{
-	Name: "gateway_retries_total",
-	Help: "Reintentos de GET ante 502/503/504 o error de red, por servicio.",
-}, []string{"upstream"})
 
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -53,98 +33,29 @@ func sendError(w http.ResponseWriter, status int, code, message string) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code, "message": message}})
 }
 
-// retryTransport repite una sola vez los GET (idempotentes) ante error de red
-// o 502/503/504, con espera de 100-300 ms y solo si queda presupuesto. Las
-// escrituras nunca se reintentan: una respuesta ausente no prueba que fallaron.
-type retryTransport struct {
-	name string
-	next http.RoundTripper
-}
-
-func (t retryTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	resp, err := t.next.RoundTrip(r)
-	if r.Method != http.MethodGet || !retryable(resp, err) {
-		return resp, err
-	}
-	wait := time.Duration(100+rand.IntN(200)) * time.Millisecond
-	if deadline, ok := r.Context().Deadline(); ok && time.Until(deadline) < wait+upstreamLimit/2 {
-		return resp, err
-	}
-	if resp != nil {
-		resp.Body.Close()
-	}
-	select {
-	case <-r.Context().Done():
-		return nil, r.Context().Err()
-	case <-time.After(wait):
-	}
-	retries.WithLabelValues(t.name).Inc()
-	return t.next.RoundTrip(r)
-}
-
-func retryable(resp *http.Response, err error) bool {
-	if err != nil {
-		return !errors.Is(err, context.Canceled)
-	}
-	return resp.StatusCode == 502 || resp.StatusCode == 503 || resp.StatusCode == 504
-}
-
-func proxy(name, target, stripPrefix string) http.Handler {
-	u, err := url.Parse(target)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		slog.Error("invalid upstream URL", "upstream", name)
-		os.Exit(1)
-	}
-	base := &http.Transport{
-		DialContext:           (&net.Dialer{Timeout: 500 * time.Millisecond}).DialContext,
-		ResponseHeaderTimeout: upstreamLimit,
-		IdleConnTimeout:       30 * time.Second,
-		MaxIdleConnsPerHost:   50,
-	}
-	rp := httputil.NewSingleHostReverseProxy(u)
-	rp.Transport = retryTransport{name: name, next: obs.Transport(base)}
-	// El middleware del gateway ya devuelve X-Correlation-ID; sin esto el proxy
-	// copiaria tambien el del servicio y el header saldria duplicado.
-	rp.ModifyResponse = func(resp *http.Response) error {
-		resp.Header.Del(obs.CorrelationHeader)
-		return nil
-	}
-	rp.ErrorHandler = func(w http.ResponseWriter, r *http.Request, e error) {
-		var ne net.Error
-		if errors.Is(e, context.DeadlineExceeded) || (errors.As(e, &ne) && ne.Timeout()) {
-			upstreamErrors.WithLabelValues(name, "timeout").Inc()
-			slog.WarnContext(r.Context(), "upstream timeout", "event", "gateway.upstream_timeout", "upstream", name)
-			sendError(w, 504, "UPSTREAM_TIMEOUT", "El servicio no respondio a tiempo; el resultado puede ser indeterminado.")
-			return
-		}
-		upstreamErrors.WithLabelValues(name, "unavailable").Inc()
-		slog.WarnContext(r.Context(), "upstream unavailable", "event", "gateway.upstream_unavailable", "upstream", name, "error", e.Error())
-		sendError(w, 502, "UPSTREAM_UNAVAILABLE", "Servicio no disponible.")
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), requestBudget)
-		defer cancel()
-		r = r.WithContext(ctx)
-		if stripPrefix != "" {
-			r.URL.Path = strings.TrimPrefix(r.URL.Path, stripPrefix)
-			r.URL.RawPath = ""
-		}
-		rp.ServeHTTP(w, r)
-	})
+// config is the gateway wiring. turnos is shared by both listeners so that the
+// portal and the partner routes use the same instances and health state.
+type config struct {
+	turnos                            *pool
+	notifications, pacientes, medicos string
+	historia                          string
+	auth                              *authenticator
+	limiter                           *tokenBucket
+	corsOrigins                       []string
 }
 
 // mountPublic registra lo que pueden ver otros grupos: la capacidad publicada
 // de Turnos (turnos-partner-v1) y la API de Notificaciones, ambas bajo /v1. La
 // clave la envia el consumidor y la valida cada servicio.
-func mountPublic(mux *http.ServeMux, turnosURL, notificationsURL string) {
-	turnos := proxy("turnos", turnosURL, "")
+func (c config) mountPublic(mux *http.ServeMux) {
+	turnos := poolProxy(c.turnos, "")
 	for _, path := range []string{"/v1/appointments", "/v1/appointments/", "/v1/doctors", "/v1/usage"} {
 		mux.Handle(path, turnos)
 	}
-	mux.Handle("/v1/", proxy("notifications", notificationsURL, ""))
+	mux.Handle("/v1/", proxy("notifications", c.notifications, ""))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"service": "gateway", "status": "ok", "portalAuthImplemented": false})
+		_ = json.NewEncoder(w).Encode(map[string]any{"service": "gateway", "status": "ok", "portalAuthImplemented": true})
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		sendError(w, 404, "NOT_FOUND", "Ruta inexistente.")
@@ -152,50 +63,116 @@ func mountPublic(mux *http.ServeMux, turnosURL, notificationsURL string) {
 }
 
 // routes es el ruteo de la red interna del portal: agrega a lo publico las
-// rutas del portal (todavia sin autenticacion) y las metricas.
-func routes(turnosURL, notificationsURL string) *http.ServeMux {
+// rutas /api del portal, con autenticacion y limite de trafico, y las metricas.
+// Solo el registro, el login y la consulta de medicos se atienden sin token.
+func (c config) routes() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.Handle("/api/turnos/", proxy("turnos", turnosURL, "/api/turnos"))
+	pacientes := proxy("pacientes", c.pacientes, "/api/pacientes")
+	mux.Handle("POST /api/pacientes/auth/register", c.portal("pacientes", open, pacientes))
+	mux.Handle("POST /api/pacientes/auth/login", c.portal("pacientes", open, pacientes))
+	mux.Handle("/api/pacientes/", c.portal("pacientes", protected, pacientes))
+	medicos := proxy("medicos", c.medicos, "/api/medicos")
+	mux.Handle("GET /api/medicos/", c.portal("medicos", open, medicos))
+	mux.Handle("/api/medicos/", c.portal("medicos", protected, medicos))
+	mux.Handle("/api/turnos/", c.portal("turnos", protected, poolProxy(c.turnos, "/api/turnos")))
+	mux.Handle("/api/historia/", c.portal("historia", protected, proxy("historia", c.historia, "/api/historia")))
 	mux.Handle("GET /metrics", obs.MetricsHandler())
-	mountPublic(mux, turnosURL, notificationsURL)
+	c.mountPublic(mux)
 	return mux
 }
 
 // publicRoutes es el unico ruteo que se expone fuera de la red del portal
-// (ADR-008): sin /api/turnos ni /metrics.
-func publicRoutes(turnosURL, notificationsURL string) *http.ServeMux {
+// (ADR-008): solo /v1/* y /healthz, sin /api ni /metrics.
+func (c config) publicRoutes() *http.ServeMux {
 	mux := http.NewServeMux()
-	mountPublic(mux, turnosURL, notificationsURL)
+	c.mountPublic(mux)
 	return mux
 }
 
-func newServer(addr string, mux *http.ServeMux) *http.Server {
-	return &http.Server{Addr: addr, Handler: obs.Middleware("gateway", mux), ReadHeaderTimeout: 3 * time.Second,
+func (c config) internalHandler() http.Handler {
+	return withCORS(c.corsOrigins, obs.Middleware("gateway", c.routes()))
+}
+
+func (c config) publicHandler() http.Handler { return obs.Middleware("gateway", c.publicRoutes()) }
+
+func newServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second}
+}
+
+// turnosTargets reads TURNOS_URLS (comma-separated instances) and falls back
+// to the single TURNOS_URL.
+func turnosTargets(list, single string) []string {
+	var out []string
+	for _, u := range strings.Split(list, ",") {
+		if u = strings.TrimSpace(u); u != "" {
+			out = append(out, u)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	if single != "" {
+		return []string{single}
+	}
+	return []string{"http://127.0.0.1:8081"}
+}
+
+func fail(msg string, args ...any) {
+	slog.Error(msg, args...)
+	os.Exit(1)
+}
+
+func loadConfig() config {
+	auth, err := newAuthenticator(os.Getenv("JWT_SECRET"))
+	if err != nil {
+		fail("invalid configuration", "error", err.Error())
+	}
+	rps, err := strconv.ParseFloat(env("GATEWAY_RATE_LIMIT_RPS", "10"), 64)
+	if err != nil || rps <= 0 {
+		fail("GATEWAY_RATE_LIMIT_RPS must be a positive number")
+	}
+	burst, err := strconv.Atoi(env("GATEWAY_RATE_LIMIT_BURST", "20"))
+	if err != nil || burst < 1 {
+		fail("GATEWAY_RATE_LIMIT_BURST must be a positive integer")
+	}
+	turnos, err := newPool("turnos", turnosTargets(os.Getenv("TURNOS_URLS"), os.Getenv("TURNOS_URL")))
+	if err != nil {
+		fail("invalid configuration", "error", err.Error())
+	}
+	return config{
+		turnos:        turnos,
+		notifications: env("NOTIFICATIONS_URL", "http://127.0.0.1:8085"),
+		pacientes:     env("PACIENTES_URL", "http://127.0.0.1:8082"),
+		medicos:       env("MEDICOS_URL", "http://127.0.0.1:8083"),
+		historia:      env("HISTORIA_URL", "http://127.0.0.1:8084"),
+		auth:          auth,
+		limiter:       newTokenBucket(rps, burst),
+		corsOrigins:   parseOrigins(os.Getenv("CORS_ALLOWED_ORIGINS")),
+	}
 }
 
 func main() {
 	obs.NewLogger("gateway")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	cfg := loadConfig()
 	shutdown, err := obs.InitTracing(ctx, "gateway")
 	if err != nil {
-		slog.Error("tracing init failed", "error", err.Error())
-		os.Exit(1)
+		fail("tracing init failed", "error", err.Error())
 	}
 	defer shutdown(context.Background())
+	go cfg.turnos.watch(ctx, healthEvery, healthTimeout)
 
-	turnosURL, notificationsURL := env("TURNOS_URL", "http://127.0.0.1:8081"), env("NOTIFICATIONS_URL", "http://127.0.0.1:8085")
 	addr := env("HTTP_ADDR", "127.0.0.1:8080")
-	servers := []*http.Server{newServer(addr, routes(turnosURL, notificationsURL))}
+	servers := []*http.Server{newServer(addr, cfg.internalHandler())}
 	// PUBLIC_HTTP_ADDR es el puerto que se publica a otros grupos; HTTP_ADDR
 	// queda en la red interna del portal.
 	if public := os.Getenv("PUBLIC_HTTP_ADDR"); public != "" {
 		if public == addr {
-			slog.Error("PUBLIC_HTTP_ADDR must differ from HTTP_ADDR")
-			os.Exit(1)
+			fail("PUBLIC_HTTP_ADDR must differ from HTTP_ADDR")
 		}
-		servers = append(servers, newServer(public, publicRoutes(turnosURL, notificationsURL)))
+		servers = append(servers, newServer(public, cfg.publicHandler()))
 	}
 	go func() {
 		<-ctx.Done()
@@ -212,8 +189,7 @@ func main() {
 	}
 	for range servers {
 		if err := <-errs; err != nil && err != http.ErrServerClosed {
-			slog.Error("http server failed", "error", err.Error())
-			os.Exit(1)
+			fail("http server failed", "error", err.Error())
 		}
 	}
 }

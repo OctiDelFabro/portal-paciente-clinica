@@ -96,7 +96,7 @@ func TestPublicV1RoutesReachTheirService(t *testing.T) {
 	defer turnos.Close()
 	notif := upstream(200, &notifCalls, 0)
 	defer notif.Close()
-	mux := routes(turnos.URL, notif.URL)
+	mux := testConfig(t, []string{turnos.URL}, notif.URL).routes()
 	cases := []struct {
 		method, path string
 		toTurnos     bool
@@ -130,8 +130,9 @@ func TestPublicListenerHidesPortalRoutes(t *testing.T) {
 	defer turnos.Close()
 	notif := upstream(200, &notifCalls, 0)
 	defer notif.Close()
-	mux := publicRoutes(turnos.URL, notif.URL)
-	for _, path := range []string{"/api/turnos/appointments", "/api/turnos/appointments/a1", "/metrics"} {
+	mux := testConfig(t, []string{turnos.URL}, notif.URL).publicRoutes()
+	for _, path := range []string{"/api/turnos/appointments", "/api/turnos/appointments/a1", "/metrics",
+		"/api/pacientes/auth/login", "/api/pacientes/auth/register", "/api/medicos/doctors", "/api/historia/records"} {
 		for _, method := range []string{"GET", "POST"} {
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader("{}")))
@@ -171,7 +172,7 @@ func TestPublicListenerResistsPathTricks(t *testing.T) {
 	defer turnos.Close()
 	notif := upstream(200, &notifCalls, 0)
 	defer notif.Close()
-	mux := publicRoutes(turnos.URL, notif.URL)
+	mux := testConfig(t, []string{turnos.URL}, notif.URL).publicRoutes()
 	for _, path := range []string{"//api/turnos/appointments", "/v1/../api/turnos/appointments", "/v1/appointments/../../api/turnos/appointments", "/./api/turnos/appointments", "//metrics", "/v1/../metrics"} {
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, httptest.NewRequest("POST", path, strings.NewReader("{}")))
