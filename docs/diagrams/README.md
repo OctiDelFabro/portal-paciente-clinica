@@ -13,14 +13,14 @@ flowchart TB
  m["Médico"]
  r["Recepción"]
  portal["Portal paciente de clínica"]
- consumidor["Microservicio del grupo consumidor"]
+ consumidor["Car Cruds: servicio Empleados"]
  proveedor["Grupo proveedor: pendiente de asignación"]
  correo["Proveedor de correo: pendiente"]
  identidad["Proveedor de identidad: pendiente"]
  p -->|"Turnos e historia clínica"| portal
  m -->|"Agenda y atenciones"| portal
  r -->|"Pacientes, vínculos y turnos"| portal
- consumidor -->|"API HTTP de correos por plantillas"| portal
+ consumidor -->|"API HTTP de turnos (X-API-Key, facturada)"| portal
  portal -.->|"Capacidad a definir"| proveedor
  portal -->|"Envío de correos"| correo
  portal -->|"Autenticación"| identidad
@@ -28,6 +28,8 @@ flowchart TB
 ```
 
 ## Contenedores
+
+Actualizado en la Entrega 2: outbox y DLQ, Mailpit y la pila de observabilidad. Turnos, Notificaciones y el gateway están operativos; Pacientes, Médicos e Historia clínica siguen como esqueletos.
 
 ```mermaid
 flowchart TB
@@ -51,8 +53,8 @@ flowchart TB
  h -->|"Validar vínculos HTTP"| p
  h -->|"Validar relación médico-paciente HTTP"| t
  n -->|"Obtener contactos HTTP"| p
- t -->|"Eventos de Turnos v1"| mq["RabbitMQ"]
- mq -->|"Consumo idempotente"| n
+ t -->|"Outbox → eventos turnos.*.v1"| mq["RabbitMQ portal.events.v1 + DLQ"]
+ mq -->|"Consumo idempotente (inbox)"| n
  t --> dt[("MySQL Turnos")]
  p --> dp[("MySQL Pacientes")]
  m --> dm[("MySQL Médicos")]
@@ -60,7 +62,20 @@ flowchart TB
  n --> dn[("MySQL Notificaciones")]
  t -.->|"Lectura derivada: flujo por validar"| redis["Redis"]
  m -->|"Proyección de perfiles"| os["OpenSearch"]
- n -->|"Correo"| correo["Proveedor de correo pendiente"]
+ n -->|"Correo SMTP"| correo["Mailpit local / proveedor de correo pendiente"]
+ subgraph obs["Observabilidad"]
+  jaeger["Jaeger: trazas OTLP"]
+  prom["Prometheus: métricas"]
+  graf["Grafana: tablero"]
+ end
+ gw -.->|"Spans"| jaeger
+ t -.->|"Spans"| jaeger
+ n -.->|"Spans"| jaeger
+ prom -.->|"Scrape /metrics"| gw
+ prom -.->|"Scrape /metrics"| t
+ prom -.->|"Scrape /metrics"| n
+ graf -->|"Consultas PromQL"| prom
  gw -->|"Verificación de identidad"| idp["Proveedor de identidad pendiente"]
+
 
 ```

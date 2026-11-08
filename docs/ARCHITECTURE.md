@@ -1,15 +1,15 @@
 # portal-paciente-clinica — Arquitectura
-docs/ARCHITECTURE.md · Versión inicial para la Entrega 1 · Diseño preliminar
-Este documento describe la arquitectura propuesta a partir del alcance confirmado y los diagramas existentes. No acredita componentes implementados ni desplegados. Las decisiones abiertas se indican al final.
+docs/ARCHITECTURE.md · Versión Entrega 2
+Describe la arquitectura del portal. En la Entrega 2 están operativos el gateway, Turnos y Notificaciones con MySQL, RabbitMQ y la pila de observabilidad; el resto se indica como diseño. Las decisiones abiertas se listan al final.
 ## 1. Contexto y alcance
 El portal atenderá a una única clínica. Los actores son paciente, médico y recepcionista. El paciente gestiona turnos propios y de menores a cargo y consulta historias clínicas; el médico configura su agenda, consulta sus turnos y registra atenciones; recepción registra pacientes, gestiona turnos y verifica vínculos con menores.
-El grupo ofrecerá a otro grupo la capacidad de envío de correos por plantillas generales. Las notificaciones dentro del portal son de uso interno. El grupo proveedor y la capacidad externa que consumirá el portal todavía no están definidos. El proveedor de identidad de terceros es una dependencia técnica y no reemplaza esa integración entre grupos.
+El grupo ofrece a Car Cruds (otro grupo) la capacidad de **reservar, consultar y cancelar turnos**, con clave por consumidor, idempotencia y facturación por reserva ([contracts/README.md](contracts/README.md), ADR-008). Hasta el 22/10/2026 la capacidad prevista era el envío de correos por plantillas generales. Las notificaciones dentro del portal son de uso interno. El grupo proveedor y la capacidad externa que consumirá el portal todavía no están definidos. El proveedor de identidad de terceros es una dependencia técnica y no reemplaza esa integración entre grupos.
 ## 2. Componentes y distribución
 Frontend web — React y TypeScript
 Centralizará las pantallas y acciones de pacientes, médicos y recepción. Consumirá el API Gateway para los flujos del portal. No accederá a bases de datos ni al broker de mensajería y no iniciará la integración con el proveedor asignado a otro grupo.
-API Gateway — Go y Gin
-Será el punto de entrada de la interfaz web. Validará las credenciales según el proveedor de identidad elegido, aplicará autorización y direccionará las solicitudes a los microservicios. La autenticación, el control de tráfico y la distribución se concretarán por etapas. El dominio y sus reglas permanecerán en los servicios responsables.
-Turnos — Go; almacenamiento MySQL
+API Gateway — Go (net/http)
+Será el punto de entrada de la interfaz web. Validará las credenciales según el proveedor de identidad elegido, aplicará autorización y direccionará las solicitudes a los microservicios. Implementado: direccionamiento a Turnos (`/api/turnos/*`) y Notificaciones (`/v1/*`), timeouts y un reintento de GET (D5), correlación, trazas y métricas. Se usa la biblioteca estándar en lugar de Gin porque el gateway solo hace proxy y comparte el middleware de observabilidad con los servicios. Pendiente: autenticación, rate limit del portal y balanceo (D12). El dominio y sus reglas permanecerán en los servicios responsables.
+Turnos — Go, arquitectura hexagonal; almacenamiento MySQL · **operativo**
 Responsabilidades y datos propios: agenda, horarios de atención, duración de turnos por médico, bloqueos, disponibilidad, reservas, cancelaciones y reprogramaciones. Esta asignación de responsabilidades fue confirmada por el grupo. Médicos no mantendrá una segunda agenda autoritativa.
 Reglas: mínimo 24 horas de anticipación para reservar, asignar, cancelar y reprogramar; ausencia de superposiciones por médico y paciente; bloqueo médico como excepción al plazo de cancelación. El bloqueo cancela los turnos afectados y genera las notificaciones correspondientes.
 Dependencias previstas: MySQL, Pacientes para identidad y vínculos con menores, Médicos para los perfiles de profesionales y RabbitMQ para publicar eventos. Redis se reserva para un flujo de lectura a justificar y medir; una reserva se valida contra el almacenamiento autoritativo, no solo contra caché.
@@ -22,7 +22,7 @@ La identidad de acceso y los roles se relacionarán con el proveedor de autentic
 Historia clínica — Go; almacenamiento MongoDB
 Responsabilidades y datos propios: historias clínicas y registros de atenciones. Gestionará su consulta y el registro de atenciones por médicos. La ubicación no relacional se justifica en ADR-003-Persistencia.md. Recepción no tiene acceso al contenido clínico.
 Aplicará permisos según el rol, los vínculos con menores y la relación entre médico y paciente a través de turnos. Consultará las capacidades necesarias de Pacientes y Turnos mediante sus interfaces, sin acceder directamente a sus bases. Un turno cancelado no habilita el acceso médico por sí mismo; si es el único vínculo, el acceso se rechaza.
-Notificaciones — Go; almacenamiento MySQL
+Notificaciones — Go, arquitectura en capas; almacenamiento MySQL · **operativo**
 Responsabilidades y datos propios: catálogo de plantillas, solicitudes de notificación, estados de procesamiento y avisos del portal. El consumidor externo podrá solicitar únicamente correos con plantillas generales de confirmación, cancelación y recordatorio. El contrato será HTTP, formal y versionado en OpenAPI.
 Para el portal consumirá eventos desde RabbitMQ y generará correo y avisos internos por reserva, cancelación, reprogramación y recordatorio 24 horas antes. Los destinatarios de turnos de menores serán el menor y su adulto responsable; si el menor no tiene correo propio, el correo se dirige únicamente al adulto.
 Si falla el correo de una cancelación por bloqueo, la cancelación se mantiene, el aviso se publica en el portal y se reintenta el correo. El proveedor de correo está pendiente; los parámetros iniciales de reintento se proponen en D5. La respuesta HTTP 202 del contrato indica aceptación para procesamiento, no confirmación de envío.
@@ -40,17 +40,26 @@ El componente responsable de coordinar el recordatorio se ubicará en Turnos, po
 Consulta de historia clínica
 El gateway dirige la consulta al servicio de Historia clínica. El servicio verifica el rol y las relaciones que habilitan el acceso mediante contratos de Pacientes y Turnos. Solo después devuelve la información de su almacenamiento.
 Capacidad ofrecida a otro grupo
-El microservicio responsable del grupo consumidor llamará a la URL publicada de Notificaciones. La petición identificará una plantilla, un destinatario y sus parámetros. La capacidad registrará la solicitud, devolverá un identificador y procesará el correo de forma asíncrona. El contrato local define X-API-Key por consumidor, las tres operaciones HTTP, campos, idempotencia y consulta de estados. La URL pública y el proveedor de correo siguen pendientes.
+El servicio Empleados de Car Cruds llama a `/v1/appointments` en el puerto público del gateway (`PUBLIC_HTTP_ADDR`, que no atiende las rutas internas `/api/*` ni `/metrics`) con su `X-API-Key` y una `Idempotency-Key` por reserva. El gateway enruta a Turnos, que autentica, aplica el límite, valida las reglas de reserva, registra dueño y precio en `partner_bookings` en la misma transacción que el turno y el evento, y devuelve 201. El consumidor consulta sus turnos y su estado de cuenta (`/v1/usage`). Antes del 23/10/2026: el microservicio responsable del grupo consumidor llamaría a la URL publicada de Notificaciones. La petición identificará una plantilla, un destinatario y sus parámetros. La capacidad registrará la solicitud, devolverá un identificador y procesará el correo de forma asíncrona. El contrato local define X-API-Key por consumidor, las tres operaciones HTTP, campos, idempotencia y consulta de estados. La URL pública y el proveedor de correo siguen pendientes.
 ## 5. Comunicación y dependencias
 Se utilizará comunicación HTTP para solicitudes del frontend a través del gateway, consultas entre servicios y la capacidad pública. La configuración de timeout, errores y reintentos se definirá por dependencia; las operaciones que puedan repetirse necesitarán una política de idempotencia.
 RabbitMQ transportará los eventos internos que Notificaciones consuma. Se prevén eventos de reserva, cancelación y reprogramación de turnos. Sus nombres, esquemas, versiones, confirmaciones, reintentos y tratamiento de mensajes fallidos se documentarán en D5 y en los contratos internos.
-## 6. Diagramas
-La carpeta de la Entrega 1 contiene los diagramas de contexto y contenedores en formato diagrams.net. Deben actualizarse para representar el frontend React/TypeScript, la propiedad de la agenda en Turnos, las consultas entre servicios, el consumidor externo de correos y el proveedor de correo aún pendiente.
-El diagrama de contexto deberá conservar los tres actores y la autenticación externa y distinguir la capacidad ofrecida de la capacidad externa todavía no asignada. El de contenedores deberá identificar los cinco microservicios, sus bases, el gateway, el frontend, RabbitMQ, OpenSearch y Redis.
-## 7. Estado de puesta en marcha y decisiones abiertas
-El proyecto y el repositorio se llaman portal-paciente-clinica. El repositorio público está disponible en https://github.com/OctiDelFabro/portal-paciente-clinica, con el contenido completo de la primera entrega en main. Incluye estructura inicial y comandos para ejecutar el mock y los esqueletos; las funcionalidades clínicas y las conexiones reales a dependencias aún no se implementaron.
-Pendientes: proveedor de autenticación y mecanismo técnico de registro; datos requeridos para la validación por recepción; edición y permisos de historia clínica aún abiertos; proveedor de correo; implementación de contratos; traslado de cambios a los diagramas originales de Drive; mecanismo de concurrencia y publicación fiable; implementación de servicios; arquitectura interna y ejecución local completa.
-Las pruebas, observabilidad, resiliencia, búsqueda, caché y balanceo se desarrollarán en las etapas correspondientes. Su presencia en el diseño no acredita una implementación operativa. D1 y D8 y las versiones iniciales de D3 y D5 deberán estar disponibles para la Entrega 1.
-## 8. Actualización de este paquete
-Las reservas existentes conservan horario y duración cuando el médico cambia la duración; el cambio se aplica a nuevas reservas. Los esquemas y los diagramas Mermaid adjuntos representan el diseño actualizado; los originales diagrams.net de Drive aún deben ajustarse. D3 y D5 ya tienen primera versión y D8 documenta el contrato HTTP.
+## 5.1 Observabilidad
+Logs JSON correlacionados (`correlation_id`, `trace_id`), métricas Prometheus en `/metrics` de cada servicio, trazas OpenTelemetry exportadas a Jaeger y un tablero Grafana provisionado. El contexto de traza viaja por HTTP, por headers AMQP y se guarda en la outbox y en cada notificación, así la traza cubre también los pasos asíncronos. La justificación de cada métrica y de cada campo de log está en [ADR-011](adr/ADR-011-Observabilidad.md).
 
+## 6. Diagramas
+Los diagramas de contexto y de contenedores están en Mermaid en [docs/diagrams](diagrams/README.md). El de contenedores se actualizó en la Entrega 2 con la outbox, la DLQ, Mailpit y la pila de observabilidad. Los originales diagrams.net de Drive siguen sin reflejar estos cambios.
+## 7. Estado de puesta en marcha y decisiones abiertas
+Operativo en la Entrega 2 (`docker compose up --build`): gateway, Turnos, Notificaciones, MySQL, RabbitMQ, Mailpit, Jaeger, Prometheus y Grafana. Pacientes, Médicos e Historia clínica siguen como esqueletos; Turnos y Notificaciones obtienen sus datos por puertos con datos semilla. El estado detallado está en [ENTREGA-2.md](ENTREGA-2.md).
+
+Decisiones registradas: D1, D2, D3, D5, D6, D7, D8, D9, D10, D11, D12 y D13 en `docs/adr/`.
+
+## 8. Limitaciones conocidas y deuda técnica aceptada
+| Limitación | Motivo | Cuándo se resuelve |
+|---|---|---|
+| Pacientes y Médicos con datos semilla | Priorizar el flujo de punta a punta | Presentación final |
+| Sin autenticación de usuarios del portal | Proveedor de identidad pendiente | Presentación final |
+| Rate limit de la API pública por instancia | Contador en memoria | Al replicar Notificaciones (mover a Redis) |
+| Búsqueda, caché y balanceo solo diseñados | D6, D7 y D12 | Presentación final |
+| Sin recordatorios, reprogramación ni bloqueos de agenda | Alcance de la Entrega 2 | Presentación final |
+| Correos solo a Mailpit | Proveedor de correo pendiente | Despliegue público |

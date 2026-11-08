@@ -1,72 +1,168 @@
-# Capacidad publicada: Notificaciones v1
-Contrato formal: [notifications-v1.openapi.json](notifications-v1.openapi.json), OpenAPI 3.1.1, versión de API 1.0.0.
-Estado: primera versión y mock local. URL operativa pública y proveedor de correo pendientes. El grupo consumidor aún no fue asignado.
+# Capacidad publicada: Turnos para socios v1
+Permite que un sistema de otro grupo **reserve, consulte y cancele turnos médicos** en la clínica (por ejemplo, el chequeo preocupacional de un empleado) y **consulte cuánto se le cobra**. Cada reserva exitosa se factura.
+
+- Contrato formal: [turnos-partner-v1.openapi.json](turnos-partner-v1.openapi.json), OpenAPI 3.1.1, versión de API **1.0.0**.
+- Decisión y justificación: [ADR-008](../adr/ADR-008-Contrato-propio.md).
+- Consumidor asignado: **Car Cruds** (concesionaria, servicio Empleados).
+- Estado: operativo en el entorno local con `docker compose`; la URL pública se comunica a cada consumidor junto con su clave.
+
+## Camino rápido
+Todas las llamadas salen del **backend** del consumidor (nunca del frontend) y llevan `X-API-Key`.
+
+1. **Elegir médico:** `GET /v1/doctors` → `{"doctors":[{"id":"doc-001","durationMinutes":30}, ...]}`.
+2. **Reservar** con una `Idempotency-Key` propia, generada y guardada **antes** de llamar:
+   ```http
+   POST /v1/appointments
+   X-API-Key: <clave del consumidor>
+   Idempotency-Key: carcruds-revision-personal-001
+   Content-Type: application/json
+
+   {"patientId":"pat-001","doctorId":"doc-001","startAt":"2026-12-01T10:00:00Z"}
+   ```
+   Respuesta `201`, `Location: /v1/appointments/{id}`:
+   ```json
+   {"id":"7c1f…","patientId":"pat-001","doctorId":"doc-001","startAt":"2026-12-01T10:00:00Z","endAt":"2026-12-01T10:30:00Z","status":"booked","version":1}
+   ```
+3. **Seguir el turno:** `GET /v1/appointments/{id}`. Si la clínica lo cancela, `status` pasa a `cancelled` y `version` aumenta.
+4. **Ver lo facturado:** `GET /v1/usage?period=2026-12`.
+
+> ¿Timeout o 503 al reservar? **Repetir exactamente el mismo POST con la misma `Idempotency-Key`.** Si el turno se había creado, se recibe el mismo turno con `201` e `Idempotency-Replayed: true`, sin duplicar la reserva ni el cobro.
 
 ## Operaciones
-| Método y ruta | Uso |
-|---|---|
-| GET /v1/templates | Catálogo, parámetros y contenido fijo de las plantillas. |
-| POST /v1/notifications | Solicitar un correo; devuelve 202, ID, estado accepted y Location. |
-| GET /v1/notifications/{id} | Consultar una solicitud del mismo consumidor. |
-| GET /healthz | Estado del mock local; no requiere clave. |
-
-Cada consumidor tendrá X-API-Key distinta. La clave queda en su microservicio, no en el frontend. HTTPS en el despliegue real. El consumidor llamará desde el servicio responsable del flujo; la URL pública del proveedor podrá pasar por su gateway. No compartir credenciales de RabbitMQ.
-
-## Plantillas
-| templateId | Obligatorios | Opcionales |
+| Método y ruta | Uso | Éxito |
 |---|---|---|
-| operation-confirmed.v1 | operationName, reference | recipientName, scheduledAt |
-| operation-cancelled.v1 | operationName, reference | recipientName, reason |
-| operation-reminder.v1 | operationName, reference, scheduledAt | recipientName |
+| `GET /v1/doctors` | Médicos y duración de su turno. | 200 |
+| `POST /v1/appointments` | Reservar (se factura). Requiere `Idempotency-Key`. | 201 |
+| `GET /v1/appointments/{id}` | Estado actual de un turno **propio**. | 200 |
+| `POST /v1/appointments/{id}/cancel` | Cancelar un turno propio, sin cuerpo, hasta 24 h antes. | 200 |
+| `GET /v1/usage?period=AAAA-MM` | Estado de cuenta del mes (UTC); sin `period`, el mes actual. | 200 |
 
-Todos los parámetros son strings y se tratan como texto, sin HTML ni sustitución de plantillas anidadas. No se acepta cuerpo, asunto ni texto libre adicional. Límites: operationName/reference 80 caracteres, recipientName 100, reason 200, scheduledAt 35. scheduledAt tiene formato RFC3339 con zona. Cuerpo de solicitud máximo 16 KiB; correo máximo 254 caracteres. Los campos desconocidos o de tipo incorrecto son rechazados. Las tres plantillas son generales y no contienen información clínica.
-El recordatorio externo se solicita cuando el consumidor quiere el envío; scheduledAt describe la operación y no programa un envío futuro.
+Reglas de negocio de la reserva (las mismas que usa el portal):
+- `startAt` en RFC 3339 con zona, **al menos 24 h** en el futuro. El fin es `startAt` + duración del médico.
+- El paciente debe estar **habilitado por recepción**.
+- No puede superponerse con otro turno activo del médico **ni del paciente**.
 
-## Idempotencia y estados
-Idempotency-Key es obligatoria en POST, de 1 a 128 caracteres alfanuméricos o ._:-. Ventana: 24 h desde la primera aceptación, por consumidor.
-Misma clave + datos equivalentes (sin importar orden de propiedades): mismo ID y respuesta original 202. No se extiende la ventana. Cambiar datos con esa clave: 409. Al vencer, puede crearse otro envío. El consumidor debe generar una clave por correo lógico, conservarla ante reintentos y no reutilizarla para otra operación.
+## Autenticación y uso
+| Tema | Regla |
+|---|---|
+| Credencial | `X-API-Key`, una por grupo consumidor, entregada en privado. Se guarda en la configuración del backend, nunca en Git ni en un frontend. |
+| Aislamiento | Un consumidor solo ve, cancela y factura **sus** turnos. Un turno ajeno o inexistente responde lo mismo: `404 NOT_FOUND`. |
+| Límite | 60 solicitudes por minuto por consumidor (configurable). Al excederlo: `429` con `Retry-After` en segundos. |
+| Transporte | HTTPS en el despliegue compartido. No seguir redirecciones. |
+| Puerto | El consumidor usa el **puerto público** del gateway (local: `8088`), que solo atiende `/v1/*` y `/healthz`. Las rutas internas del portal no existen ahí (`404`). |
+| Correlación | Opcional: enviar `X-Correlation-ID`; el portal lo conserva en logs y trazas, útil para pedir soporte. |
+| Caché | Todas las respuestas llevan `Cache-Control: no-store`. |
 
-accepted significa solicitud aceptada; sent significa aceptada por el proveedor de correo; failed significa fracaso terminal del procesamiento. sent no acredita entrega, lectura ni recepción por la persona. El mock marca simulated=true y simula accepted → sent o failed después de MOCK_DELAY al consultar el estado. Un POST repetido conserva el estado accepted de su respuesta inicial; GET muestra el estado actual.
+## Idempotencia
+- `Idempotency-Key` es **obligatoria** en `POST /v1/appointments`: de 1 a 128 caracteres `A-Z a-z 0-9 . _ : -`.
+- Una clave identifica **una reserva lógica** del consumidor, de forma permanente. Usar una clave nueva por cada turno que se quiere pedir.
 
-Límite inicial: 60 solicitudes por minuto por consumidor, contando operaciones autenticadas. 429 incluye Retry-After en segundos. La implementación real responderá 503 si no puede aceptar de forma durable; el mock no reproduce esa falla.
+| Situación | Resultado |
+|---|---|
+| Misma clave + mismos datos | `201` con el **mismo** turno, `Idempotency-Replayed: true`. No se vuelve a cobrar. El cuerpo refleja el estado actual del turno. |
+| Misma clave + otros datos | `409 IDEMPOTENCY_CONFLICT`. No cambiar la clave para "forzar" otra reserva sin entender por qué. |
+| La reserva fue rechazada (409/422/403/404) | El rechazo **no** queda asociado a la clave: corregir los datos y reintentar con la misma clave. |
+| Solicitudes simultáneas con la misma clave | Se crea un único turno; todas reciben ese turno. |
+
+"Mismos datos" compara `patientId`, `doctorId` y el **instante** de `startAt`: `2026-12-01T07:00:00-03:00` y `2026-12-01T10:00:00Z` son la misma solicitud.
+
+## Facturación
+| Regla | Detalle |
+|---|---|
+| Qué se cobra | Cada reserva creada con éxito (`201` que no es repetición). |
+| Qué no se cobra | Repeticiones idempotentes, rechazos, errores, consultas y cancelaciones. |
+| Cancelación | **No** reintegra el cargo: la reserva ya ocupó la agenda del médico. |
+| Precio | Precio unitario vigente al reservar, guardado con cada reserva. Un cambio de precio no modifica reservas anteriores. Inicial: **ARS 25.000,00** por reserva (a confirmar con el consumidor). |
+| Montos | Enteros en centavos (`2500000` = 25.000,00) con moneda ISO 4217, para evitar errores de redondeo. |
+| Período | Mes calendario en UTC, según la fecha de creación de la reserva (`from` inclusive, `to` exclusivo). |
+
+Ejemplo de `GET /v1/usage?period=2026-12`:
+```json
+{
+  "consumer": "carcruds",
+  "period": "2026-12",
+  "from": "2026-12-01T00:00:00Z",
+  "to": "2027-01-01T00:00:00Z",
+  "currentPrice": {"amountCents": 2500000, "currency": "ARS"},
+  "totals": [{"currency": "ARS", "bookings": 2, "amountCents": 5000000}],
+  "items": [
+    {"appointmentId": "7c1f…", "bookedAt": "2026-12-01T13:05:12Z", "priceCents": 2500000, "currency": "ARS", "status": "booked"},
+    {"appointmentId": "9a02…", "bookedAt": "2026-12-03T09:41:30Z", "priceCents": 2500000, "currency": "ARS", "status": "cancelled"}
+  ]
+}
+```
+`totals` agrupa por moneda. `items` permite conciliar cada cargo con el turno que lo originó.
 
 ## Errores
-| HTTP | code | Acción del consumidor |
+Formato: `{"error":{"code":"…","message":"…"}}`. Decidir por `code`, no por `message`.
+
+| HTTP | code | Qué hacer |
 |---|---|---|
-| 400 | INVALID_JSON / INVALID_IDEMPOTENCY_KEY | Corregir estructura, tipos o clave. |
-| 401 | UNAUTHORIZED | Corregir la credencial. |
-| 404 | NOT_FOUND | Revisar ID y consumidor; no revela solicitudes ajenas. |
-| 409 | IDEMPOTENCY_CONFLICT | Resolver discrepancia; no cambiar la clave para forzar otro envío. |
-| 413 | PAYLOAD_TOO_LARGE | Reducir cuerpo. |
-| 415 | UNSUPPORTED_MEDIA_TYPE | Usar application/json. |
-| 422 | VALIDATION_ERROR | Corregir plantilla, destinatario o parámetros. |
-| 429 | RATE_LIMITED | Esperar Retry-After. |
-| 503 | SERVICE_UNAVAILABLE | Reintentar con la misma clave y datos. |
+| 400 | `INVALID_JSON` · `INVALID_REQUEST` | Corregir el cuerpo: solo `patientId`, `doctorId`, `startAt` (RFC 3339). |
+| 400 | `INVALID_IDEMPOTENCY_KEY` | Enviar una clave válida. |
+| 400 | `INVALID_PERIOD` | Usar `period=AAAA-MM`. |
+| 401 | `UNAUTHORIZED` | Revisar la clave. |
+| 403 | `PATIENT_NOT_ENABLED` | El paciente existe pero recepción todavía no lo habilitó. |
+| 404 | `UNKNOWN_DOCTOR` · `UNKNOWN_PATIENT` | ID inexistente en la clínica. |
+| 404 | `NOT_FOUND` | Turno inexistente o de otro consumidor. |
+| 409 | `SLOT_UNAVAILABLE` | Horario ocupado (médico o paciente). Elegir otro. |
+| 409 | `IDEMPOTENCY_CONFLICT` | La clave ya se usó con otros datos. |
+| 409 | `ALREADY_CANCELLED` | El turno ya estaba cancelado. |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | Enviar `Content-Type: application/json`. |
+| 422 | `LEAD_TIME_TOO_SHORT` | Faltan menos de 24 h para el turno (reservar o cancelar). |
+| 429 | `RATE_LIMITED` | Esperar `Retry-After`. |
+| 503 | `UNAVAILABLE` | Resultado no confirmado. Repetir con la **misma** `Idempotency-Key`, o consultar el turno. |
+| 502 · 504 | `UPSTREAM_UNAVAILABLE` · `UPSTREAM_TIMEOUT` | Gateway sin respuesta del servicio. Tratar igual que 503. |
 
-Los errores usan {"error":{"code":"…","message":"…"}}. X-Request-ID identifica solicitudes; no usar su texto como credencial.
+## Migración para Car Cruds
+Su adaptador (`services/employees/adapters/clinic`, commit `9eec277`) se construyó leyendo la ruta interna `/api/turnos`. La capacidad publicada mantiene **los mismos campos de respuesta, el mismo 201 y los mismos códigos de rechazo** que ya interpretan. Cambia solo esto:
 
-## Ejecutar y probar
-Requiere Go 1.23 o posterior. Desde la raíz, en PowerShell:
+| Antes (ruta interna, observada) | Ahora (capacidad publicada) |
+|---|---|
+| `CLINIC_BASE_URL=…/api/turnos` | `CLINIC_BASE_URL=<host público>/v1`, local `http://host.docker.internal:8088/v1` (se siguen agregando `/appointments` y `/appointments/{id}`). `/api/turnos` ya no es accesible desde fuera del portal. |
+| Sin autenticación | Header `X-API-Key` |
+| Sin idempotencia: "enviar como máximo una vez" y conciliar a mano | Header `Idempotency-Key` (sugerido: su `requestId` o `localReference`). Un `unknown` se resuelve repitiendo el POST. |
+| Veían cualquier turno | Solo los propios; un turno ajeno da `404` |
+| — | Nuevos: `GET /v1/doctors`, `POST /v1/appointments/{id}/cancel`, `GET /v1/usage` |
+
+**Pacientes disponibles hoy** (datos semilla, hasta que el servicio Pacientes esté operativo): `pat-001` y `pat-003` habilitados, `pat-002` registrado sin habilitar. El alta de empleados reales como pacientes se coordina con la clínica.
+
+## Ejecutar y probar en local
 ```powershell
-$env:MOCK_API_KEYS = 'grupo-demo:solo-demo-local'
-go run ./services/notifications/mock
+$env:TURNOS_PARTNER_KEYS = 'carcruds:solo-demo-local-1,otro-grupo:solo-demo-local-2'
+docker compose up -d --build
+$env:TURNOS_KEY = 'solo-demo-local-1'; $env:TURNOS_KEY_OTHER = 'solo-demo-local-2'
+python scripts/check_turnos_contract.py
 ```
-En otra terminal:
-```powershell
-$headers = @{ 'X-API-Key' = 'solo-demo-local'; 'Idempotency-Key' = 'reserva-123' }
-$body = Get-Content docs/contracts/examples/confirmation.json -Raw
-$result = Invoke-RestMethod http://127.0.0.1:8085/v1/notifications -Method Post -Headers $headers -ContentType application/json -Body $body
-$result
-Invoke-RestMethod ("http://127.0.0.1:8085/v1/notifications/" + $result.id) -Headers @{ 'X-API-Key' = 'solo-demo-local' }
-```
-Repetir el POST con los mismos headers/body devuelve el mismo ID. Cambiar reference conservando la clave produce 409.
-Para simular fallo, detener el mock, definir $env:MOCK_RESULT = 'failed' y arrancarlo de nuevo. MOCK_DELAY controla la demora (por defecto 1s). La dirección por defecto es 127.0.0.1:8085; MOCK_ADDR permite cambiarla.
+El script valida contra el puerto público del gateway (`TURNOS_BASE_URL`, por defecto `http://127.0.0.1:8088`) estados, headers y cuerpos de todas las operaciones con el OpenAPI, incluidos idempotencia, aislamiento entre consumidores y facturación. Cada corrida crea y cancela un turno, que queda facturado. Las claves de arriba son solo de ejemplo local.
 
-Tests: go test -v ./services/notifications/mock.
-Verificación HTTP separada: python scripts/check_contract.py (inicia un binario temporal y valida respuestas con el contrato).
-La clave de arriba es exclusivamente una muestra local, no una credencial real.
+Configuración del proveedor (servicio Turnos):
 
-## Versionado y limitaciones
-/v1 identifica la versión mayor; las plantillas tienen sufijo .v1. Campos obligatorios nuevos, eliminación de operaciones/plantillas o cambios de significado exigen v2 y guía de migración. Las extensiones compatibles mantienen v1 y suben la versión menor; los consumidores deben tolerar parámetros opcionales de respuesta nuevos.
-El mock no persiste después de reiniciar, no usa bases ni RabbitMQ, no envía correo, no demuestra disponibilidad pública y mantiene estados en memoria hasta detenerse. No compartirlo como servicio real. El proveedor de correo y su política ante respuesta incierta siguen pendientes.
+| Variable | Default | Uso |
+|---|---|---|
+| `TURNOS_PARTNER_KEYS` | vacío | `consumidor:clave` separados por coma. Vacío: todas las solicitudes reciben 401. |
+| `TURNOS_PARTNER_PRICE_CENTS` | `2500000` | Precio por reserva, en centavos. |
+| `TURNOS_PARTNER_CURRENCY` | `ARS` | Moneda ISO 4217. |
+| `TURNOS_PARTNER_RATE` | `60` | Solicitudes por minuto por consumidor. |
 
+Un valor inválido de precio, moneda o límite impide iniciar Turnos.
+
+**Al desplegar se publica solamente `PUBLIC_HTTP_ADDR` del gateway** (puerto `8088` en compose). `HTTP_ADDR` (`8080`) es la red interna del portal: atiende además `/api/turnos/*`, que todavía no tiene autenticación del portal, y `/metrics`. Nunca exponerlo fuera de esa red, tampoco mediante un túnel.
+
+Ejemplos procesables en [examples/turnos](examples/turnos).
+
+## Versionado
+`/v1` es la versión mayor. Agregar campos opcionales u operaciones nuevas mantiene `v1` y sube la versión menor: el consumidor debe **tolerar campos de respuesta desconocidos**. Quitar o renombrar campos, agregar campos obligatorios en la solicitud o cambiar el significado de un código exige `/v2` y una guía de migración.
+
+| Versión | Cambio |
+|---|---|
+| 1.0.0 | Versión inicial (23/10/2026): reservas con clave por consumidor, idempotencia, aislamiento y facturación. |
+
+## Límites conocidos
+- Médicos y pacientes provienen de datos semilla; no hay alta de pacientes desde esta API.
+- No hay reprogramación: cancelar y reservar de nuevo, con otra clave (se factura de nuevo).
+- No hay consulta de disponibilidad: un horario ocupado se informa con `409 SLOT_UNAVAILABLE`.
+- El límite de solicitudes es por instancia de Turnos.
+- La API no expone información clínica: un turno confirmado **no** acredita asistencia ni aptitud médica.
+
+La API anterior de correos se describe en [NOTIFICATIONS.md](NOTIFICATIONS.md); ya no es la capacidad publicada.

@@ -2,13 +2,17 @@
   "openapi": "3.1.1",
   "info": {
     "title": "Notificaciones - portal-paciente-clinica",
-    "version": "1.0.0",
-    "description": "Contrato inicial para la Entrega 1. Correos por tres plantillas predefinidas. El mock usa memoria y respuestas simuladas: no envia correos reales. Los recordatorios externos se solicitan al momento elegido por el consumidor; esta API no programa envios futuros."
+    "version": "1.1.0",
+    "description": "Contrato v1 de Notificaciones. Correos por tres plantillas predefinidas. 1.1.0 agrega el servicio real (MySQL, envio asincrono) junto al mock local, que usa memoria y respuestas simuladas. Los recordatorios externos se solicitan al momento elegido por el consumidor; esta API no programa envios futuros."
   },
   "servers": [
     {
+      "url": "http://localhost:8080",
+      "description": "Servicio real a traves del gateway local (docker compose). URL publica pendiente para la presentacion final."
+    },
+    {
       "url": "http://localhost:8085",
-      "description": "Mock local. URL operativa publica pendiente para el siguiente hito."
+      "description": "Mock local en memoria, sin dependencias."
     }
   ],
   "security": [
@@ -490,11 +494,11 @@
     "/healthz": {
       "get": {
         "operationId": "health",
-        "summary": "Comprobar el mock local",
+        "summary": "Comprobar disponibilidad del mock o del servicio",
         "security": [],
         "responses": {
           "200": {
-            "description": "Mock disponible.",
+            "description": "Disponible. mode indica si responde el mock o el servicio real.",
             "headers": {
               "X-Request-ID": {
                 "description": "Identificador de correlacion.",
@@ -518,12 +522,25 @@
                       "const": "ok"
                     },
                     "mode": {
-                      "const": "mock"
+                      "enum": [
+                        "mock",
+                        "service"
+                      ]
                     },
                     "simulated": {
-                      "const": true
+                      "type": "boolean"
                     }
                   }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio real sin almacenamiento disponible; no acepta solicitudes durables.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
