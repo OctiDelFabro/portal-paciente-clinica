@@ -68,6 +68,15 @@ func (m *memStore) SetPasswordHash(_ context.Context, id, hash string) error {
 	return nil
 }
 
+func (m *memStore) SetRole(_ context.Context, id, role string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p := m.byID[id]
+	p.Role = role
+	m.byID[id] = p
+	return nil
+}
+
 func newMux(t *testing.T) (*http.ServeMux, *memStore) {
 	t.Helper()
 	store := &memStore{byID: map[string]repository.Patient{}}
@@ -250,6 +259,10 @@ func TestContactForInternalUse(t *testing.T) {
 	// Through the gateway every request carries X-Patient-Id: a patient cannot read another one's contact.
 	if rec := call(mux, "GET", "/patients/pat-002/contact", "", map[string]string{"X-Patient-Id": "pat-001"}); rec.Code != 403 {
 		t.Fatalf("cross-patient read: got %d", rec.Code)
+	}
+	// A doctor CAN read patient contact for agenda lookup.
+	if rec := call(mux, "GET", "/patients/pat-002/contact", "", map[string]string{"X-Patient-Id": "doc-001", "X-User-Role": "doctor"}); rec.Code != 200 {
+		t.Fatalf("doctor reading patient contact: got %d", rec.Code)
 	}
 }
 

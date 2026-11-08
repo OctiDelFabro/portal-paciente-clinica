@@ -36,6 +36,21 @@ func (f *fakeStore) AddNote(_ context.Context, _ string, n service.Note) error {
 	f.notes = append(f.notes, n)
 	return nil
 }
+func (f *fakeStore) Encounter(_ context.Context, id string) (service.Encounter, error) {
+	if f.noteErr != nil {
+		return service.Encounter{}, f.noteErr
+	}
+	if f.timeline != nil {
+		for _, encs := range f.timeline {
+			for _, enc := range encs {
+				if enc.AppointmentID == id {
+					return enc, nil
+				}
+			}
+		}
+	}
+	return service.Encounter{AppointmentID: id, DoctorID: "doc-001", Status: service.StatusScheduled}, nil
+}
 func (f *fakeStore) Timeline(_ context.Context, patientID string) ([]service.Encounter, error) {
 	return f.timeline[patientID], nil
 }
@@ -112,6 +127,7 @@ func TestPostNoteAuthorization(t *testing.T) {
 		{"no identity", map[string]string{}, 401, "UNAUTHORIZED"},
 		{"patient cannot write", map[string]string{"X-Patient-Id": "pat-001", "X-User-Role": "patient"}, 403, "FORBIDDEN"},
 		{"receptionist cannot write", map[string]string{"X-Patient-Id": "rec-1", "X-User-Role": "receptionist"}, 403, "FORBIDDEN"},
+		{"unassigned doctor cannot write", map[string]string{"X-Patient-Id": "doc-999", "X-User-Role": "doctor"}, 403, "FORBIDDEN"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {

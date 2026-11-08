@@ -69,7 +69,7 @@ func TestPortalAppointmentResponsesIncludeThePrice(t *testing.T) {
 
 // Previous behavior: the booking body keeps every existing field unchanged.
 func TestPortalBookingKeepsTheExistingFields(t *testing.T) {
-	rec := serve(fakeUC{energy: domain.Energy{Status: domain.EnergyPending}}, "POST", "/appointments", valid, "")
+	rec := serve(fakeUC{energy: domain.Energy{Status: domain.EnergyPending}}, "POST", "/appointments", valid, "pat-001")
 	want := `{"id":"a-1","patientId":"pat-001","doctorId":"doc-001","startAt":"2026-10-25T10:00:00-03:00","endAt":"2026-10-25T10:30:00-03:00","status":"booked","version":1,"price":`
 	if rec.Code != 201 || !strings.HasPrefix(rec.Body.String(), want) {
 		t.Fatalf("got %d %s", rec.Code, rec.Body)

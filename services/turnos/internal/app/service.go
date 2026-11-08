@@ -63,6 +63,8 @@ type Store interface {
 	ActiveForDoctor(ctx context.Context, doctorID string, from, to time.Time) ([]domain.Appointment, error)
 	// ListByPatient returns the patient's appointments, most recent first.
 	ListByPatient(ctx context.Context, patientID string) ([]domain.Appointment, error)
+	// ListByDoctor returns the doctor's appointments, most recent first.
+	ListByDoctor(ctx context.Context, doctorID string) ([]domain.Appointment, error)
 	// SaveEnergy records an estimate attempt at attemptedAt. An estimated e is
 	// written only while the stored energy is still pending; a pending e only
 	// records the attempt. It never touches status or version.

@@ -77,6 +77,16 @@ func (f *fakeStore) AddNote(_ context.Context, appointmentID string, n service.N
 	return nil
 }
 
+func (f *fakeStore) Encounter(_ context.Context, appointmentID string) (service.Encounter, error) {
+	if f.err != nil {
+		return service.Encounter{}, f.err
+	}
+	if f.noteErr != nil {
+		return service.Encounter{}, f.noteErr
+	}
+	return service.Encounter{AppointmentID: appointmentID, DoctorID: "doc-001", Status: service.StatusScheduled}, nil
+}
+
 func (f *fakeStore) Timeline(_ context.Context, patientID string) ([]service.Encounter, error) {
 	f.asked = patientID
 	return f.timeline, nil
@@ -141,7 +151,7 @@ func TestAddNoteValidatesText(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &fakeStore{}
-			_, err := newService(store).AddNote(context.Background(), "t-1", "doctor", tt.text)
+			_, err := newService(store).AddNote(context.Background(), "t-1", "doc-001", "doctor", tt.text)
 			if tt.ok != (err == nil) {
 				t.Fatalf("ok=%v, got %v", tt.ok, err)
 			}
@@ -157,13 +167,21 @@ func TestAddNoteValidatesText(t *testing.T) {
 
 func TestAddNoteStoresNoteWithMetadata(t *testing.T) {
 	store := &fakeStore{}
-	n, err := newService(store).AddNote(context.Background(), "t-1", "doctor", " Control en 30 dias ")
+	n, err := newService(store).AddNote(context.Background(), "t-1", "doc-001", "doctor", " Control en 30 dias ")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := service.Note{ID: "note-1", Text: "Control en 30 dias", AuthorRole: "doctor", CreatedAt: fixedNow}
 	if n != want || len(store.notes["t-1"]) != 1 || store.notes["t-1"][0] != want {
 		t.Fatalf("want %+v stored, got %+v / %+v", want, n, store.notes)
+	}
+}
+
+func TestAddNoteRejectsUnassignedDoctor(t *testing.T) {
+	store := &fakeStore{}
+	_, err := newService(store).AddNote(context.Background(), "t-1", "doc-999", "doctor", "Nota de otro medico")
+	if !errors.Is(err, service.ErrForbidden) {
+		t.Fatalf("want ErrForbidden, got %v", err)
 	}
 }
 

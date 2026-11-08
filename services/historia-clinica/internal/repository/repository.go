@@ -138,6 +138,15 @@ func (r *Repo) AddNote(ctx context.Context, appointmentID string, n service.Note
 	return service.ErrCancelled
 }
 
+func (r *Repo) Encounter(ctx context.Context, appointmentID string) (service.Encounter, error) {
+	var enc service.Encounter
+	err := r.DB.Collection(Encounters).FindOne(ctx, bson.M{"_id": appointmentID}).Decode(&enc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return service.Encounter{}, service.ErrNotFound
+	}
+	return enc, err
+}
+
 func (r *Repo) Timeline(ctx context.Context, patientID string) ([]service.Encounter, error) {
 	cur, err := r.DB.Collection(Encounters).Find(ctx, bson.M{"patientId": patientID},
 		options.Find().SetSort(bson.D{{Key: "startAt", Value: -1}}))

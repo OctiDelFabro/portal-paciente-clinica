@@ -77,6 +77,18 @@ func (s *memStore) ListByPatient(_ context.Context, patientID string) ([]domain.
 	sort.Slice(out, func(i, j int) bool { return out[i].StartAt.After(out[j].StartAt) })
 	return out, nil
 }
+func (s *memStore) ListByDoctor(_ context.Context, doctorID string) ([]domain.Appointment, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []domain.Appointment{}
+	for _, a := range s.rows {
+		if a.DoctorID == doctorID {
+			out = append(out, a)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartAt.After(out[j].StartAt) })
+	return out, nil
+}
 func (t memTx) LockResources(context.Context, ...string) error { return nil }
 func (t memTx) FindActiveOverlapping(_ context.Context, doctorID, patientID string, start, end time.Time) ([]domain.Appointment, error) {
 	var out []domain.Appointment

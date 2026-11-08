@@ -35,10 +35,13 @@ func NewIssuer(secret string, ttl time.Duration, now func() time.Time) (*Issuer,
 	return &Issuer{secret: []byte(secret), ttl: ttl, now: now}, nil
 }
 
-// Issue returns a signed token for the patient and its lifetime in seconds.
-func (i *Issuer) Issue(patientID string) (string, int, error) {
+// Issue returns a signed token for the patient or doctor and its lifetime in seconds.
+func (i *Issuer) Issue(patientID, role string) (string, int, error) {
+	if role == "" {
+		role = "patient"
+	}
 	now := i.now().UTC().Truncate(time.Second)
-	claims := Claims{Role: "patient", RegisteredClaims: jwt.RegisteredClaims{
+	claims := Claims{Role: role, RegisteredClaims: jwt.RegisteredClaims{
 		Subject: patientID, Issuer: "pacientes",
 		IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(i.ttl)),
 	}}

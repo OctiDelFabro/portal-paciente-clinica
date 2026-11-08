@@ -54,12 +54,30 @@ func (f fakeUC) CancelForPatient(_ context.Context, p, _, _ string) (domain.Appo
 	f.record("CancelForPatient:" + p)
 	return domain.Appointment{ID: "a-1", PatientID: p, Status: domain.StatusCancelled, Version: 2, Energy: f.energy}, f.err
 }
+func (f fakeUC) ListForDoctor(_ context.Context, d string) ([]domain.Appointment, error) {
+	f.record("ListForDoctor:" + d)
+	return []domain.Appointment{{ID: "a-1", PatientID: "pat-001", DoctorID: d, Status: domain.StatusBooked, Version: 1, Energy: f.energy}}, f.err
+}
+func (f fakeUC) GetForDoctor(_ context.Context, d, _ string) (domain.Appointment, error) {
+	f.record("GetForDoctor:" + d)
+	return domain.Appointment{ID: "a-1", PatientID: "pat-001", DoctorID: d, Status: domain.StatusBooked, Version: 1, Energy: f.energy}, f.err
+}
+func (f fakeUC) CancelForDoctor(_ context.Context, d, _, _ string) (domain.Appointment, error) {
+	f.record("CancelForDoctor:" + d)
+	return domain.Appointment{ID: "a-1", PatientID: "pat-001", DoctorID: d, Status: domain.StatusCancelled, Version: 2, Energy: f.energy}, f.err
+}
 
 func post(t *testing.T, uc UseCases, path, body string) *httptest.ResponseRecorder {
 	mux := http.NewServeMux()
 	Register(mux, uc)
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest("POST", path, strings.NewReader(body)))
+	req := httptest.NewRequest("POST", path, strings.NewReader(body))
+	if strings.Contains(body, `"patientId":"p"`) {
+		req.Header.Set(PatientHeader, "p")
+	} else {
+		req.Header.Set(PatientHeader, "pat-001")
+	}
+	mux.ServeHTTP(rec, req)
 	return rec
 }
 

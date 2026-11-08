@@ -42,15 +42,24 @@ func TestBookWithPatientHeaderRejectsAnotherPatient(t *testing.T) {
 	}
 }
 
-// Previous behavior: without the header the body patient is booked through the directory.
-func TestBookWithoutPatientHeaderKeepsPreviousBehavior(t *testing.T) {
-	var calls []string
-	rec := serve(fakeUC{calls: &calls}, "POST", "/appointments", valid, "")
-	if rec.Code != 201 || len(calls) != 1 || calls[0] != "Book:pat-001" {
-		t.Fatalf("got %d %v", rec.Code, calls)
+// Portal routes fail closed without patient authentication.
+func TestBookWithoutPatientHeaderIsUnauthorized(t *testing.T) {
+	rec := serve(fakeUC{}, "POST", "/appointments", valid, "")
+	if rec.Code != 401 || errorCode(t, rec) != "UNAUTHORIZED" {
+		t.Fatalf("want 401 UNAUTHORIZED, got %d %s", rec.Code, rec.Body)
 	}
-	if rec := serve(fakeUC{}, "POST", "/appointments", `{"doctorId":"doc-001","startAt":"2026-10-25T10:00:00-03:00"}`, ""); rec.Code != 400 {
-		t.Fatalf("missing patientId without header: want 400, got %d", rec.Code)
+}
+
+func TestBookWithDoctorRoleIsForbidden(t *testing.T) {
+	mux := http.NewServeMux()
+	Register(mux, fakeUC{})
+	req := httptest.NewRequest("POST", "/appointments", strings.NewReader(valid))
+	req.Header.Set(PatientHeader, "doc-001")
+	req.Header.Set("X-User-Role", "doctor")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != 403 || errorCode(t, rec) != "FORBIDDEN" {
+		t.Fatalf("want 403 FORBIDDEN, got %d %s", rec.Code, rec.Body)
 	}
 }
 
@@ -76,21 +85,63 @@ func TestListAppointmentsRequiresThePatientHeader(t *testing.T) {
 	}
 }
 
+func TestDoctorViewsAndCancelsAgenda(t *testing.T) {
+	mux := http.NewServeMux()
+	var calls []string
+	Register(mux, fakeUC{calls: &calls})
+
+	// GET /appointments with doctor role calls ListForDoctor
+	req := httptest.NewRequest("GET", "/appointments", nil)
+	req.Header.Set(PatientHeader, "doc-001")
+	req.Header.Set("X-User-Role", "doctor")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != 200 || len(calls) != 1 || calls[0] != "ListForDoctor:doc-001" {
+		t.Fatalf("doctor list: got %d %v", rec.Code, calls)
+	}
+
+	// GET /appointments/a-1 with doctor role calls GetForDoctor
+	calls = nil
+	req = httptest.NewRequest("GET", "/appointments/a-1", nil)
+	req.Header.Set(PatientHeader, "doc-001")
+	req.Header.Set("X-User-Role", "doctor")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != 200 || len(calls) != 1 || calls[0] != "GetForDoctor:doc-001" {
+		t.Fatalf("doctor get: got %d %v", rec.Code, calls)
+	}
+
+	// POST /appointments/a-1/cancel with doctor role calls CancelForDoctor
+	calls = nil
+	req = httptest.NewRequest("POST", "/appointments/a-1/cancel", strings.NewReader(`{"reason":"doctor_reschedule"}`))
+	req.Header.Set(PatientHeader, "doc-001")
+	req.Header.Set("X-User-Role", "doctor")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != 200 || len(calls) != 1 || calls[0] != "CancelForDoctor:doc-001" {
+		t.Fatalf("doctor cancel: got %d %v", rec.Code, calls)
+	}
+}
+
 func TestGetAndCancelScopeToThePatientHeader(t *testing.T) {
 	cases := []struct {
 		method, path, patient, want string
+		wantCode                    int
 	}{
-		{"GET", "/appointments/a-1", "pat-900", "GetForPatient:pat-900"},
-		{"POST", "/appointments/a-1/cancel", "pat-900", "CancelForPatient:pat-900"},
-		// Previous behavior without the header.
-		{"GET", "/appointments/a-1", "", "Get"},
-		{"POST", "/appointments/a-1/cancel", "", "Cancel"},
+		{"GET", "/appointments/a-1", "pat-900", "GetForPatient:pat-900", 200},
+		{"POST", "/appointments/a-1/cancel", "pat-900", "CancelForPatient:pat-900", 200},
+		// Without header: fails closed with 401 UNAUTHORIZED
+		{"GET", "/appointments/a-1", "", "", 401},
+		{"POST", "/appointments/a-1/cancel", "", "", 401},
 	}
 	for _, c := range cases {
 		var calls []string
 		rec := serve(fakeUC{calls: &calls}, c.method, c.path, "", c.patient)
-		if rec.Code != 200 || len(calls) != 1 || calls[0] != c.want {
-			t.Errorf("%s %s patient=%q: got %d %v", c.method, c.path, c.patient, rec.Code, calls)
+		if rec.Code != c.wantCode {
+			t.Errorf("%s %s patient=%q: got %d want %d", c.method, c.path, c.patient, rec.Code, c.wantCode)
+		}
+		if c.want != "" && (len(calls) != 1 || calls[0] != c.want) {
+			t.Errorf("%s %s patient=%q: got %v want %s", c.method, c.path, c.patient, calls, c.want)
 		}
 	}
 }

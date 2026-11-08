@@ -24,6 +24,7 @@ type Store interface {
 	ByEmail(ctx context.Context, email string) (repository.Patient, error)
 	ByID(ctx context.Context, id string) (repository.Patient, error)
 	SetPasswordHash(ctx context.Context, id, hash string) error
+	SetRole(ctx context.Context, id, role string) error
 }
 
 const (
@@ -129,7 +130,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (string, error
 		return "", err
 	}
 	p := repository.Patient{ID: "pat-" + s.NewID(), Email: in.Email, PasswordHash: hash, FullName: in.FullName,
-		DocumentNumber: in.DocumentNumber, BirthDate: birth, Enabled: false, CreatedAt: s.Now().UTC()}
+		DocumentNumber: in.DocumentNumber, BirthDate: birth, Enabled: false, Role: "patient", CreatedAt: s.Now().UTC()}
 	if err := s.Store.Create(ctx, p); err != nil {
 		return "", err
 	}
@@ -158,7 +159,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (Session, e
 		return Session{}, ErrInvalidCredentials
 	}
 	s.Limiter.Reset(key)
-	token, expiresIn, err := s.Tokens.Issue(p.ID)
+	token, expiresIn, err := s.Tokens.Issue(p.ID, p.Role)
 	if err != nil {
 		return Session{}, err
 	}

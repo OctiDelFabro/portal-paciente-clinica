@@ -77,6 +77,18 @@ func (f *fakeStore) SetPasswordHash(_ context.Context, id, hash string) error {
 	return nil
 }
 
+func (f *fakeStore) SetRole(_ context.Context, id, role string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p, ok := f.byID[id]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	p.Role = role
+	f.byID[id] = p
+	return nil
+}
+
 var fixedNow = time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
 
 func newTestService(t *testing.T, store *fakeStore) (*Service, *time.Time) {
@@ -239,13 +251,19 @@ func TestSeedDemoIsIdempotentAndMatchesSharedIDs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(store.byID) != 3 {
-		t.Fatalf("want 3 demo patients, got %d", len(store.byID))
+	if len(store.byID) != 5 {
+		t.Fatalf("want 5 demo accounts, got %d", len(store.byID))
 	}
 	want := map[string]struct {
 		email   string
 		enabled bool
-	}{"pat-001": {"paciente1@example.test", true}, "pat-002": {"paciente2@example.test", false}, "pat-003": {"", true}}
+	}{
+		"pat-001": {"paciente1@example.test", true},
+		"pat-002": {"paciente2@example.test", false},
+		"pat-003": {"", true},
+		"doc-001": {"doctor1@example.test", true},
+		"doc-002": {"doctor2@example.test", true},
+	}
 	for id, w := range want {
 		p := store.byID[id]
 		if p.Email != w.email || p.Enabled != w.enabled {
@@ -266,14 +284,40 @@ func TestSeedDemoWithoutPasswordCreatesProfilesOnly(t *testing.T) {
 	if err := svc.SeedDemo(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
-	if len(store.byID) != 3 || store.byID["pat-001"].PasswordHash != "" {
-		t.Fatal("profiles must exist without password hashes")
+	if len(store.byID) != 5 || store.byID["pat-001"].PasswordHash != "" {
+		t.Fatalf("profiles must exist without password hashes, got %d profiles", len(store.byID))
 	}
 	if err := svc.SeedDemo(context.Background(), "demo-pass-2"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.Login(context.Background(), "paciente2@example.test", "demo-pass-2"); err != nil {
 		t.Fatalf("password must be set on a later start: %v", err)
+	}
+}
+
+func TestDoctorLoginIssuesTokenWithDoctorRole(t *testing.T) {
+	store := newFakeStore()
+	svc, clock := newTestService(t, store)
+	if err := svc.SeedDemo(context.Background(), "doctor-pass-123"); err != nil {
+		t.Fatal(err)
+	}
+	session, err := svc.Login(context.Background(), "doctor1@example.test", "doctor-pass-123")
+	if err != nil {
+		t.Fatalf("doctor login failed: %v", err)
+	}
+	if session.Patient.Role != "doctor" {
+		t.Fatalf("want doctor role, got %q", session.Patient.Role)
+	}
+	// Verify JWT claims
+	var claims Claims
+	_, err = jwt.ParseWithClaims(session.AccessToken, &claims, func(t *jwt.Token) (any, error) {
+		return []byte(testSecret), nil
+	}, jwt.WithTimeFunc(func() time.Time { return *clock }))
+	if err != nil {
+		t.Fatalf("parse jwt: %v", err)
+	}
+	if claims.Role != "doctor" || claims.Subject != "doc-001" {
+		t.Fatalf("unexpected claims: role=%q sub=%q", claims.Role, claims.Subject)
 	}
 }
 

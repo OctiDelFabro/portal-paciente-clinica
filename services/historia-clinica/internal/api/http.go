@@ -90,12 +90,15 @@ func (h *HTTP) addNote(w http.ResponseWriter, r *http.Request) {
 		sendError(w, 400, "INVALID_JSON", "Invalid JSON, unknown fields or wrong types.")
 		return
 	}
-	note, err := h.Service.AddNote(r.Context(), r.PathValue("appointmentId"), role, req.Text)
+	doctorID := r.Header.Get("X-Patient-Id")
+	note, err := h.Service.AddNote(r.Context(), r.PathValue("appointmentId"), doctorID, role, req.Text)
 	switch {
 	case errors.Is(err, service.ErrInvalidNote):
 		sendError(w, 422, "VALIDATION_ERROR", "text is required and must have at most 4000 characters.")
 	case errors.Is(err, service.ErrNotFound):
 		sendError(w, 404, "NOT_FOUND", "Encounter not found.")
+	case errors.Is(err, service.ErrForbidden):
+		sendError(w, 403, "FORBIDDEN", "Doctor is not assigned to this appointment.")
 	case errors.Is(err, service.ErrCancelled):
 		sendError(w, 409, "ENCOUNTER_CANCELLED", "A cancelled appointment does not accept clinical notes.")
 	case err != nil:

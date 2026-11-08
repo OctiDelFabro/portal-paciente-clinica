@@ -23,6 +23,7 @@ var (
 	ErrInvalidNote   = errors.New("invalid note")
 	ErrNotFound      = errors.New("encounter not found")
 	ErrCancelled     = errors.New("encounter is cancelled")
+	ErrForbidden     = errors.New("doctor is not assigned to this appointment")
 )
 
 const (
@@ -88,6 +89,8 @@ type Store interface {
 	Apply(ctx context.Context, c Change) (duplicate bool, err error)
 	// AddNote returns ErrNotFound or ErrCancelled when the note cannot be added.
 	AddNote(ctx context.Context, appointmentID string, n Note) error
+	// Encounter returns the encounter for the appointment, or ErrNotFound.
+	Encounter(ctx context.Context, appointmentID string) (Encounter, error)
 	// Timeline returns the patient's encounters sorted by start, newest first.
 	Timeline(ctx context.Context, patientID string) ([]Encounter, error)
 	Ping(ctx context.Context) error
@@ -134,17 +137,27 @@ func (s *Service) HandleEvent(ctx context.Context, e Event) (bool, error) {
 	return s.Store.Apply(ctx, c)
 }
 
-// AddNote appends a clinical note; the caller has already checked the role.
-func (s *Service) AddNote(ctx context.Context, appointmentID, role, text string) (Note, error) {
+// AddNote appends a clinical note; verifies doctor assignment and status.
+func (s *Service) AddNote(ctx context.Context, appointmentID, doctorID, role, text string) (Note, error) {
 	text = strings.TrimSpace(text)
 	if text == "" || utf8.RuneCountInString(text) > MaxNoteLength {
 		return Note{}, ErrInvalidNote
+	}
+	enc, err := s.Store.Encounter(ctx, appointmentID)
+	if err != nil {
+		return Note{}, err
+	}
+	if enc.DoctorID != doctorID {
+		return Note{}, ErrForbidden
+	}
+	if enc.Status == StatusCancelled {
+		return Note{}, ErrCancelled
 	}
 	n := Note{ID: s.NewID(), Text: text, AuthorRole: role, CreatedAt: s.Now().UTC()}
 	if err := s.Store.AddNote(ctx, appointmentID, n); err != nil {
 		return Note{}, err
 	}
-	slog.InfoContext(ctx, "clinical note added", "event", "note.added", "appointment_id", appointmentID, "note_id", n.ID)
+	slog.InfoContext(ctx, "clinical note added", "event", "note.added", "appointment_id", appointmentID, "doctor_id", doctorID, "note_id", n.ID)
 	return n, nil
 }
 

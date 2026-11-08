@@ -33,6 +33,7 @@ type Patient struct {
 	BirthDate      time.Time
 	Enabled        bool
 	ResponsibleID  string
+	Role           string
 	CreatedAt      time.Time
 }
 
@@ -59,7 +60,28 @@ func Open(ctx context.Context, dsn string) (*Repo, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	if err := migrateRole(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate role column: %w", err)
+	}
 	return &Repo{DB: db}, nil
+}
+
+func migrateRole(ctx context.Context, db *sql.DB) error {
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'patients' AND COLUMN_NAME = 'role'`).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, "ALTER TABLE patients ADD COLUMN role VARCHAR(20) NOT NULL DEFAULT 'patient'")
+	var me *mysql.MySQLError
+	if errors.As(err, &me) && me.Number == 1060 {
+		return nil
+	}
+	return err
 }
 
 func nullable(s string) sql.NullString { return sql.NullString{String: s, Valid: s != ""} }
@@ -71,11 +93,15 @@ func (r *Repo) Create(ctx context.Context, p Patient) error {
 	if !p.BirthDate.IsZero() {
 		birth = sql.NullTime{Time: p.BirthDate, Valid: true}
 	}
+	role := p.Role
+	if role == "" {
+		role = "patient"
+	}
 	_, err := r.DB.ExecContext(ctx, `INSERT INTO patients
-		(id, email, password_hash, full_name, document_number, birth_date, enabled, responsible_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(id, email, password_hash, full_name, document_number, birth_date, enabled, responsible_id, created_at, role)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, nullable(p.Email), nullable(p.PasswordHash), p.FullName, nullable(p.DocumentNumber), birth, p.Enabled,
-		nullable(p.ResponsibleID), p.CreatedAt)
+		nullable(p.ResponsibleID), p.CreatedAt, role)
 	var me *mysql.MySQLError
 	if errors.As(err, &me) && me.Number == 1062 {
 		if strings.Contains(me.Message, "uq_email") {
@@ -86,17 +112,21 @@ func (r *Repo) Create(ctx context.Context, p Patient) error {
 	return err
 }
 
-const columns = "id, email, password_hash, full_name, document_number, birth_date, enabled, responsible_id, created_at"
+const columns = "id, email, password_hash, full_name, document_number, birth_date, enabled, responsible_id, created_at, role"
 
 func scan(row *sql.Row) (Patient, error) {
 	var p Patient
-	var email, hash, doc, responsible sql.NullString
+	var email, hash, doc, responsible, role sql.NullString
 	var birth sql.NullTime
-	err := row.Scan(&p.ID, &email, &hash, &p.FullName, &doc, &birth, &p.Enabled, &responsible, &p.CreatedAt)
+	err := row.Scan(&p.ID, &email, &hash, &p.FullName, &doc, &birth, &p.Enabled, &responsible, &p.CreatedAt, &role)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Patient{}, ErrNotFound
 	}
 	p.Email, p.PasswordHash, p.DocumentNumber, p.ResponsibleID = email.String, hash.String, doc.String, responsible.String
+	p.Role = role.String
+	if p.Role == "" {
+		p.Role = "patient"
+	}
 	if birth.Valid {
 		p.BirthDate = birth.Time
 	}
@@ -113,6 +143,11 @@ func (r *Repo) ByID(ctx context.Context, id string) (Patient, error) {
 
 func (r *Repo) SetPasswordHash(ctx context.Context, id, hash string) error {
 	_, err := r.DB.ExecContext(ctx, "UPDATE patients SET password_hash = ? WHERE id = ?", hash, id)
+	return err
+}
+
+func (r *Repo) SetRole(ctx context.Context, id, role string) error {
+	_, err := r.DB.ExecContext(ctx, "UPDATE patients SET role = ? WHERE id = ?", role, id)
 	return err
 }
 

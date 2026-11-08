@@ -120,7 +120,10 @@ func (h *HTTP) login(w http.ResponseWriter, r *http.Request) {
 		slog.InfoContext(r.Context(), "login succeeded", "event", "auth.login_succeeded", "patient_id", session.Patient.ID)
 		sendJSON(w, 200, map[string]any{
 			"accessToken": session.AccessToken, "tokenType": "Bearer", "expiresIn": session.ExpiresIn,
-			"patient": map[string]string{"patientId": session.Patient.ID, "fullName": session.Patient.FullName, "email": session.Patient.Email},
+			"patient": map[string]string{
+				"patientId": session.Patient.ID, "fullName": session.Patient.FullName, "email": session.Patient.Email,
+				"role": session.Patient.Role,
+			},
 		})
 	}
 }
@@ -141,17 +144,24 @@ func (h *HTTP) me(w http.ResponseWriter, r *http.Request) {
 	if !p.BirthDate.IsZero() {
 		birth = p.BirthDate.Format(time.DateOnly)
 	}
+	role := p.Role
+	if role == "" {
+		role = "patient"
+	}
 	sendJSON(w, 200, map[string]any{
 		"patientId": p.ID, "fullName": p.FullName, "email": emailPtr(p.Email), "documentNumber": p.DocumentNumber,
 		"birthDate": birth, "enabled": p.Enabled, "responsiblePatientId": p.ResponsibleID,
+		"role": role,
 	})
 }
 
 // contact serves other services on the internal network. A request that came
-// through the gateway always carries X-Patient-Id and may only read itself.
+// through the gateway always carries X-Patient-Id and may only read itself,
+// unless caller has role "doctor" (RF-14: doctor needs patient contact for agenda).
 func (h *HTTP) contact(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if caller := r.Header.Get("X-Patient-Id"); caller != "" && caller != id {
+	role := r.Header.Get("X-User-Role")
+	if caller := r.Header.Get("X-Patient-Id"); caller != "" && caller != id && role != "doctor" {
 		sendError(w, 403, "FORBIDDEN", "Not allowed to read this patient.")
 		return
 	}

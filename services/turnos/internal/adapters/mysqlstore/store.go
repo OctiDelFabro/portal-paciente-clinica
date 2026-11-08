@@ -186,6 +186,13 @@ func (s *Store) ListByPatient(ctx context.Context, patientID string) ([]domain.A
 	return scanAll(rows, err)
 }
 
+// ListByDoctor returns the most recent appointments of the doctor (any status).
+func (s *Store) ListByDoctor(ctx context.Context, doctorID string) ([]domain.Appointment, error) {
+	rows, err := s.DB.QueryContext(ctx, "SELECT "+columns+` FROM appointments
+		WHERE doctor_id = ? ORDER BY start_at DESC, id LIMIT ?`, doctorID, listLimit)
+	return scanAll(rows, err)
+}
+
 func (t *mysqlTx) GetForUpdate(ctx context.Context, id string) (domain.Appointment, error) {
 	return scan(t.tx.QueryRowContext(ctx, "SELECT "+columns+" FROM appointments WHERE id = ? FOR UPDATE", id))
 }

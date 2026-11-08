@@ -36,7 +36,7 @@ Brief, section 6 "Presentacion Grupal" (quoted verbatim):
 | T9 | S7, S13 | inline | done | k6 availability (99.7% hit rate, 775µs p50) & booking peak (2916 reqs, 62ms p95, 409/429 validated); documented in ADR-007 and ADR-013 |
 | T10 | S10, S11 | inline | pending | ADR-004, ARCHITECTURE limitations, VERIFICACION, POSTMORTEM |
 | T11 | S4 | inline | blocked | cloud deploy (pending account) |
-| T12 | S1, S2 | inline | pending | doctor accounts (role doctor), doctor agenda in Turnos, doctor-to-appointment check in Historia, portal routes reject requests without X-Patient-Id |
+| T12 | S1, S2 | inline | done | doctor accounts (role doctor in Pacientes), doctor agenda in Turnos, doctor-to-appointment authorization in Historia, portal routes fail closed without X-Patient-Id; full suite & live e2e verified |
 
 Route evidence: T1–T5 run as parallel writers (Writer trigger (a)): five independent units with disjoint edit surfaces under `services/<name>/**` and `gateway/**`, each several files and 100+ lines. Shared files (`compose.yaml`, `go.mod`, `docs/ARCHITECTURE.md`, `README.md`) are owned by the parent (T0, T6, T10).
 
@@ -53,6 +53,7 @@ Route evidence: T1–T5 run as parallel writers (Writer trigger (a)): five indep
 - L10 (2026-11-08): T7 (frontend) committed in 68a953f; T8 (energy provider client, contract tests, quote and MySQL persistence in Turnos, provider-stub) committed in 13e9592. Next: T6 compose wiring & integration tests once Docker is running.
 - L11 (2026-11-08): T6 completed. Docker stack up and healthy (gateway, turnos-1, turnos-2, pacientes, medicos, historia-clinica, notifications, provider-stub, mysql, mongodb, rabbitmq, opensearch, redis, prometheus, grafana, jaeger, mailpit). Seam check verified end-to-end: registration, JWT login, OpenSearch doctor search, Turnos quote with energy calculation from provider-stub, booking, RabbitMQ outbox publishing, Historia Clínica consumer in MongoDB, and timeline reading via Gateway.
 - L12 (2026-11-08): T9 completed. Automated load tests executed via `grafana/k6` in Compose network (`infra/k6/availability.js` and `infra/k6/booking-peak.js`). Measured before/after cache at 200 req/s (99.74% hit rate in Redis, 775µs p50 vs 1.05ms without cache, 99.7% reduction in MySQL queries). Peak booking load test under contention validated MySQL row locks, 201 Created on winners, 409 Conflict on overlapping slots, and 429 Too Many Requests on partner rate limit. Evidence documented in ADR-007 and ADR-013.
+- L13 (2026-11-08): T12 completed. Doctor accounts seeded (doc-001, doc-002) in Pacientes with role "doctor" and JWT issuance; Turnos added ListForDoctor/GetForDoctor/CancelForDoctor and closed fail-open advisory by requiring X-Patient-Id (401 on missing); Historia Clinica added doctor-to-appointment assignment authorization (403 if doctor != assigned doctor); Pacientes allows doctor role to read patient contacts for agenda; verified via unit tests, frontend build, and live Docker stack e2e execution.
 
 
 

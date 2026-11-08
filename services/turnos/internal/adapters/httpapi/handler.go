@@ -40,6 +40,9 @@ type UseCases interface {
 	ListForPatient(ctx context.Context, patientID string) ([]domain.Appointment, error)
 	GetForPatient(ctx context.Context, patientID, id string) (domain.Appointment, error)
 	CancelForPatient(ctx context.Context, patientID, id, reason string) (domain.Appointment, error)
+	ListForDoctor(ctx context.Context, doctorID string) ([]domain.Appointment, error)
+	GetForDoctor(ctx context.Context, doctorID, id string) (domain.Appointment, error)
+	CancelForDoctor(ctx context.Context, doctorID, id, reason string) (domain.Appointment, error)
 	// Quote and PriceOf price portal consultations (ADR-009).
 	Quote(ctx context.Context, doctorID string, startAt time.Time) (app.Quote, error)
 	PriceOf(e domain.Energy) domain.Price
@@ -90,24 +93,26 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		if !ok || !decode(w, r, &in) {
 			return
 		}
-		if patient != "" {
-			if in.PatientID != "" && in.PatientID != patient {
-				sendError(w, 403, "PATIENT_MISMATCH", "Solo puede reservar turnos para el paciente autenticado.")
-				return
-			}
-			in.PatientID = patient
+		if patient == "" {
+			sendError(w, 401, "UNAUTHORIZED", "Se requiere un paciente autenticado.")
+			return
 		}
+		role := r.Header.Get("X-User-Role")
+		if role != "" && role != "patient" {
+			sendError(w, 403, "FORBIDDEN", "Solo los pacientes pueden reservar turnos.")
+			return
+		}
+		if in.PatientID != "" && in.PatientID != patient {
+			sendError(w, 403, "PATIENT_MISMATCH", "Solo puede reservar turnos para el paciente autenticado.")
+			return
+		}
+		in.PatientID = patient
 		start, err := time.Parse(time.RFC3339, in.StartAt)
 		if err != nil || in.PatientID == "" || in.DoctorID == "" {
 			sendError(w, 400, "INVALID_REQUEST", "patientId, doctorId y startAt (RFC3339) son obligatorios.")
 			return
 		}
-		var a domain.Appointment
-		if patient != "" {
-			a, err = uc.BookForPatient(r.Context(), patient, in.DoctorID, start)
-		} else {
-			a, err = uc.Book(r.Context(), in.PatientID, in.DoctorID, start)
-		}
+		a, err := uc.BookForPatient(r.Context(), patient, in.DoctorID, start)
 		if err != nil {
 			rejected.WithLabelValues(app.RejectReason(err)).Inc()
 			mapError(w, err)
@@ -118,15 +123,22 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		sendJSON(w, 201, toPortalDTO(uc, a))
 	})
 	mux.HandleFunc("GET /appointments", func(w http.ResponseWriter, r *http.Request) {
-		patient, ok := authPatient(w, r)
+		caller, ok := authPatient(w, r)
 		if !ok {
 			return
 		}
-		if patient == "" {
-			sendError(w, 401, "UNAUTHORIZED", "Se requiere un paciente autenticado.")
+		if caller == "" {
+			sendError(w, 401, "UNAUTHORIZED", "Se requiere autenticacion.")
 			return
 		}
-		list, err := uc.ListForPatient(r.Context(), patient)
+		role := r.Header.Get("X-User-Role")
+		var list []domain.Appointment
+		var err error
+		if role == "doctor" {
+			list, err = uc.ListForDoctor(r.Context(), caller)
+		} else {
+			list, err = uc.ListForPatient(r.Context(), caller)
+		}
 		if err != nil {
 			mapError(w, err)
 			return
@@ -138,16 +150,21 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		sendJSON(w, 200, map[string]any{"appointments": out})
 	})
 	mux.HandleFunc("GET /appointments/{id}", func(w http.ResponseWriter, r *http.Request) {
-		patient, ok := authPatient(w, r)
+		caller, ok := authPatient(w, r)
 		if !ok {
 			return
 		}
+		if caller == "" {
+			sendError(w, 401, "UNAUTHORIZED", "Se requiere autenticacion.")
+			return
+		}
+		role := r.Header.Get("X-User-Role")
 		var a domain.Appointment
 		var err error
-		if patient != "" {
-			a, err = uc.GetForPatient(r.Context(), patient, r.PathValue("id"))
+		if role == "doctor" {
+			a, err = uc.GetForDoctor(r.Context(), caller, r.PathValue("id"))
 		} else {
-			a, err = uc.Get(r.Context(), r.PathValue("id"))
+			a, err = uc.GetForPatient(r.Context(), caller, r.PathValue("id"))
 		}
 		if err != nil {
 			mapError(w, err)
@@ -159,8 +176,12 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		var in struct {
 			Reason string `json:"reason"`
 		}
-		patient, ok := authPatient(w, r)
+		caller, ok := authPatient(w, r)
 		if !ok {
+			return
+		}
+		if caller == "" {
+			sendError(w, 401, "UNAUTHORIZED", "Se requiere autenticacion.")
 			return
 		}
 		if r.ContentLength != 0 && !decode(w, r, &in) {
@@ -170,12 +191,13 @@ func Register(mux *http.ServeMux, uc UseCases) {
 			sendError(w, 400, "INVALID_REQUEST", "reason admite hasta 32 caracteres.")
 			return
 		}
+		role := r.Header.Get("X-User-Role")
 		var a domain.Appointment
 		var err error
-		if patient != "" {
-			a, err = uc.CancelForPatient(r.Context(), patient, r.PathValue("id"), in.Reason)
+		if role == "doctor" {
+			a, err = uc.CancelForDoctor(r.Context(), caller, r.PathValue("id"), in.Reason)
 		} else {
-			a, err = uc.Cancel(r.Context(), r.PathValue("id"), in.Reason)
+			a, err = uc.CancelForPatient(r.Context(), caller, r.PathValue("id"), in.Reason)
 		}
 		if err != nil {
 			mapError(w, err)
