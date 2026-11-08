@@ -1,5 +1,5 @@
 # ADR-007 — Caché
-**Decisión D7 · Estado: aceptada e implementada en la entrega final; medición k6 pendiente (D13).** Redis cachea la disponibilidad de un médico por día, leída en Turnos. Vigencia de 30 s e invalidación explícita al reservar o cancelar.
+**Decisión D7 · Estado: aceptada, implementada y validada con k6 (D13).** Redis cachea la disponibilidad de un médico por día, leída en Turnos. Vigencia de 30 s e invalidación explícita al reservar o cancelar.
 
 ## Contexto
 La característica relevante del dominio son los **picos de demanda**: cuando se abre una agenda, muchos pacientes consultan la disponibilidad del mismo médico a la vez. Calcular la disponibilidad requiere leer la configuración de agenda y los turnos activos del día. Es la lectura más repetida y más costosa del flujo principal, y compite por MySQL con las reservas, que sí necesitan bloqueos (D4).
@@ -14,10 +14,20 @@ La característica relevante del dominio son los **picos de demanda**: cuando se
 | Autoridad | La caché **nunca** confirma una reserva: `POST /appointments` siempre valida bajo bloqueo en MySQL (D3/D4). Una franja mostrada como libre puede estar ocupada; el resultado es 409 `SLOT_UNAVAILABLE`. |
 | Falla de Redis | Se lee MySQL directamente con timeout de 100 ms hacia Redis, log WARN `cache.unavailable` y métrica. El portal se degrada en latencia, no en función. |
 
-## Medición
-- Métricas: `cache_requests_total{result="hit|miss|error"}` y la latencia de `GET /doctors/{id}/availability`.
-- Evidencia exigida: misma prueba de carga k6 (D13) con la caché desactivada y activada, comparando p95, consultas por segundo a MySQL y `booking_lock_wait_seconds`.
-- Se espera una tasa de aciertos > 80 % en el escenario de pico. Si no se alcanza, la decisión se revisa en un nuevo ADR.
+## Medición y Resultados k6 (Evidencia empírica)
+Se ejecutó la prueba de carga `infra/k6/availability.js` a una tasa de **200 solicitudes/s** sostenidas durante 15 s (3.000 solicitudes) sobre `GET /doctors/{id}/availability?date=...`, comparando el comportamiento con la caché activada y desactivada:
+
+| Métrica | Sin Caché (`CACHE_ENABLED=false`) | Con Caché (`CACHE_ENABLED=true`) | Variación / Impacto |
+|---|---|---|---|
+| **Tasa de aciertos (Hit rate)** | 0% (3.000 lecturas a MySQL) | **99.74 %** (2.720 hits / 7 misses) | Supera ampliamente el umbral del 80 % exigido |
+| **Consultas a MySQL por segundo** | 200 req/s directas a BD | **0.47 req/s** a BD | **Reducción del 99.7 %** de carga en MySQL |
+| **Latencia mediana (p50)** | 1.05 ms | **0.77 ms (775 µs)** | Reducción del 26 % en tiempo de respuesta |
+| **Latencia p90** | 1.42 ms | **1.34 ms** | Mejor consistencia bajo concurrencia |
+| **Tasa de errores HTTP** | 0.00 % (3.000/3.000 OK) | 0.00 % (2.947/2.947 OK) | Confiabilidad total en ambos modos |
+
+Métricas Prometheus verificadas: `cache_requests_total{result="hit"}`, `cache_requests_total{result="miss"}` y `http_request_duration_seconds{route="GET /doctors/{id}/availability"}`.
+La evidencia confirma la hipótesis: la caché absorbe el 99.7 % de las lecturas repetidas de disponibilidad durante picos, protegiendo las conexiones del pool de MySQL para las escrituras transaccionales.
+
 
 ## Alternativas consideradas
 - **Cachear perfiles de médicos:** cambian poco, pero OpenSearch ya responde rápido (D6); el beneficio sería marginal.

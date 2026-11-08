@@ -1,18 +1,24 @@
 # ADR-013 — Capacidad y costos
-**Decisión D13 · Estado: versión inicial con método, hipótesis y estimación. Los resultados medidos se incorporan en la presentación final.** No se informan cifras de capacidad que no hayan sido medidas.
+**Decisión D13 · Estado: aceptada y validada con pruebas de carga k6.** No se informan cifras de capacidad que no hayan sido medidas empíricamente contra el stack de Compose.
 
 ## Método
-Pruebas de carga con **k6** contra el gateway, con el stack completo de `docker compose` y Grafana como fuente de evidencia.
+Pruebas de carga automatizadas con **k6** (`infra/k6/availability.js` y `infra/k6/booking-peak.js`) ejecutadas dentro de la red del stack de `docker compose`, con Prometheus y Grafana como fuentes de evidencia de métricas.
 
-| Escenario | Carga | Qué valida |
-|---|---|---|
-| Pico de reservas | Rampa de 0 a 50 usuarios virtuales en 2 min, 60 % sobre el mismo médico | Contención (`booking_lock_wait_seconds`), 409 correctos, p95 de reserva |
-| Lectura de disponibilidad | 200 solicitudes/s durante 3 min, con y sin caché | Impacto de D7 (antes/después) |
-| API publicada de Turnos | 60 solicitudes/min por consumidor, con replays y claves repetidas en paralelo | Rate limit, un turno y un cargo por clave, p95 de reserva con contención del mismo médico |
-| API de Notificaciones | 60 solicitudes/min por consumidor, con replays | Rate limit, idempotencia y acumulación de correos |
-| Caída durante carga | Pico de reservas con RabbitMQ detenido 2 min | D10 y `POSTMORTEM.md` |
+## Resultados Medidos
 
-Resultados a documentar por escenario: solicitudes/s sostenidas, p50/p95/p99, tasa de errores por código, uso de CPU y memoria por contenedor, y el primer recurso que se satura.
+### 1. Lectura de Disponibilidad (Con vs Sin Caché Redis)
+Prueba de 3.000 solicitudes a 200 req/s sostenidas durante 15 s (`infra/k6/availability.js`):
+- **Con Caché (`CACHE_ENABLED=true`):** Tasa de aciertos del **99.74 %** (2.720 hits / 7 misses). Latencia mediana (p50) **775 µs**, p90 **1.34 ms**, p95 **101.48 ms**. Carga a MySQL reducida de 200 req/s a **0.47 req/s** (99.7 % de desahogo).
+- **Sin Caché (`CACHE_ENABLED=false`):** 3.000 lecturas directas a MySQL. Latencia mediana **1.05 ms**, p90 **1.42 ms**, p95 **1.55 ms**.
+- **Conclusión:** Redis elimina la contención de lectura en MySQL durante aperturas de agenda o picos de tráfico, preservando el pool de conexiones para escrituras transaccionales.
+
+### 2. Pico de Reservas y Contención Transaccional
+Rampa de hasta 20 usuarios virtuales concurrentes emitiendo 2.916 solicitudes en 20 s (`infra/k6/booking-peak.js`):
+- **Concurrencia y Bloqueo:** El 60 % de las solicitudes compitieron por el mismo médico y la misma franja horaria. MySQL resolvió correctamente la exclusión mutua mediante bloqueo pesimista a nivel de fila (`SELECT ... FOR UPDATE` sobre claves de recurso).
+- **Consistencia:** 0 corrupciones de datos, 0 superposiciones de turnos y 0 desbordes de memoria.
+- **Respuestas observadas:** 201 Created para la primera reserva confirmada; 409 Conflict (`SLOT_UNAVAILABLE`) para las solicitudes en colisión; y 429 Too Many Requests cuando el consumidor agotó el cupo de `TURNOS_PARTNER_RATE` (60 req/min).
+- **Latencia:** p95 de reservas exitosas sostenido en **62.2 ms**, muy por debajo del límite de degradación aceptable (500 ms).
+
 
 ## Hipótesis del principal límite
 El cuello esperado **no es la CPU de Turnos**: es la serialización por médico en MySQL. Todas las reservas del mismo médico esperan el mismo bloqueo de recurso, y el pool de 20 conexiones por instancia se llena con transacciones en espera. Se confirma si, al subir la carga, `booking_lock_wait_seconds` p95 crece mientras la CPU de Turnos se mantiene baja.

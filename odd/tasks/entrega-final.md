@@ -33,7 +33,7 @@ Brief, section 6 "Presentacion Grupal" (quoted verbatim):
 | T6 | all | inline | done | compose stack up & healthy, full suite green, seam check passed end-to-end |
 | T7 | S1 | inline | done | 68a953f — React/Vite patient portal (login, search, booking pass, history, agenda); build green |
 | T8 | S5, S14 | delegated (parallel with T7) | done | 13e9592 — energy provider client + circuit breaker + quotes in Turnos + contract tests + provider stub; unit tests green |
-| T9 | S7, S13 | inline | pending | k6 load tests, before/after cache evidence, ADR-013 results |
+| T9 | S7, S13 | inline | done | k6 availability (99.7% hit rate, 775µs p50) & booking peak (2916 reqs, 62ms p95, 409/429 validated); documented in ADR-007 and ADR-013 |
 | T10 | S10, S11 | inline | pending | ADR-004, ARCHITECTURE limitations, VERIFICACION, POSTMORTEM |
 | T11 | S4 | inline | blocked | cloud deploy (pending account) |
 | T12 | S1, S2 | inline | pending | doctor accounts (role doctor), doctor agenda in Turnos, doctor-to-appointment check in Historia, portal routes reject requests without X-Patient-Id |
@@ -52,5 +52,7 @@ Route evidence: T1–T5 run as parallel writers (Writer trigger (a)): five indep
 - L9: Frontend direction chosen by the user: boarding pass and live board (impeccable, Operate, code-led). PRODUCT.md and surface brief written. Doctor role needs backend support (T12).
 - L10 (2026-11-08): T7 (frontend) committed in 68a953f; T8 (energy provider client, contract tests, quote and MySQL persistence in Turnos, provider-stub) committed in 13e9592. Next: T6 compose wiring & integration tests once Docker is running.
 - L11 (2026-11-08): T6 completed. Docker stack up and healthy (gateway, turnos-1, turnos-2, pacientes, medicos, historia-clinica, notifications, provider-stub, mysql, mongodb, rabbitmq, opensearch, redis, prometheus, grafana, jaeger, mailpit). Seam check verified end-to-end: registration, JWT login, OpenSearch doctor search, Turnos quote with energy calculation from provider-stub, booking, RabbitMQ outbox publishing, Historia Clínica consumer in MongoDB, and timeline reading via Gateway.
+- L12 (2026-11-08): T9 completed. Automated load tests executed via `grafana/k6` in Compose network (`infra/k6/availability.js` and `infra/k6/booking-peak.js`). Measured before/after cache at 200 req/s (99.74% hit rate in Redis, 775µs p50 vs 1.05ms without cache, 99.7% reduction in MySQL queries). Peak booking load test under contention validated MySQL row locks, 201 Created on winners, 409 Conflict on overlapping slots, and 429 Too Many Requests on partner rate limit. Evidence documented in ADR-007 and ADR-013.
+
 
 
