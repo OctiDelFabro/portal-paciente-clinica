@@ -38,3 +38,4 @@ Route evidence: units are sequential (T2 depends on T1, T3/T4 on T2); no Writer 
 - L11 (2026-10-23): Approved closing the `/api/turnos` exposure.
 - L12: Chose network separation (two listeners) over source-IP filtering because behind a tunnel or reverse proxy every request arrives from the proxy address; local 8080 behavior unchanged.
 - L13: Independent verifier (S8): PASS, no blockers; path tricks (dot-segments, %2e%2e, %2f, absolute-form, Host) never reach internal routes on 8088; 8080 unchanged. Probes committed as TestPublicListenerResistsPathTricks. RDD: d99690e assessed high (escalated item 2), consent declined by user. Advisories: PUBLIC_HTTP_ADDR==HTTP_ADDR guard compares strings only (second bind still fails closed); shutdown of both listeners shares one 5 s budget.
+- L14 (2026-11-08): Price confirmed: ARS 25.000 per booking (L9 assumption accepted).
