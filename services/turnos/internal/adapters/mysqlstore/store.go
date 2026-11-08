@@ -55,6 +55,9 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	if err := migrateEnergy(ctx, db); err != nil {
+		return nil, fmt.Errorf("migrate energy columns: %w", err)
+	}
 	return &Store{DB: db}, nil
 }
 
@@ -89,18 +92,22 @@ func (s *Store) once(ctx context.Context, fn func(app.Tx) error) error {
 	return tx.Commit()
 }
 
-const columns = "id, patient_id, doctor_id, start_at, end_at, status, version, COALESCE(cancel_reason, '')"
+const columns = "id, patient_id, doctor_id, start_at, end_at, status, version, COALESCE(cancel_reason, ''), " + energyColumns
 
 type scanner interface{ Scan(...any) error }
 
 func scan(row scanner) (domain.Appointment, error) {
 	var a domain.Appointment
 	var status string
-	err := row.Scan(&a.ID, &a.PatientID, &a.DoctorID, &a.StartAt, &a.EndAt, &status, &a.Version, &a.CancelReason)
+	var e energyRow
+	err := row.Scan(&a.ID, &a.PatientID, &a.DoctorID, &a.StartAt, &a.EndAt, &status, &a.Version, &a.CancelReason, &e.kwh, &e.cost, &e.status, &e.version)
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, app.ErrNotFound
 	}
 	a.Status = domain.Status(status)
+	if err == nil {
+		a.Energy, err = e.energy()
+	}
 	return a, err
 }
 
@@ -184,8 +191,11 @@ func (t *mysqlTx) GetForUpdate(ctx context.Context, id string) (domain.Appointme
 }
 
 func (t *mysqlTx) Insert(ctx context.Context, a domain.Appointment) error {
-	_, err := t.tx.ExecContext(ctx, `INSERT INTO appointments (id, patient_id, doctor_id, start_at, end_at, status, version)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`, a.ID, a.PatientID, a.DoctorID, a.StartAt.UTC(), a.EndAt.UTC(), string(a.Status), a.Version)
+	kwh, cost, version := energyArgs(a.Energy)
+	_, err := t.tx.ExecContext(ctx, `INSERT INTO appointments (id, patient_id, doctor_id, start_at, end_at, status, version,
+		energy_kwh, energy_cost_ars, energy_status, energy_algorithm_version)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, a.ID, a.PatientID, a.DoctorID, a.StartAt.UTC(), a.EndAt.UTC(), string(a.Status), a.Version,
+		kwh, cost, energyStatus(a.Energy), version)
 	return err
 }
 

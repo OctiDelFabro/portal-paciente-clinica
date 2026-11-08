@@ -63,6 +63,13 @@ type Store interface {
 	ActiveForDoctor(ctx context.Context, doctorID string, from, to time.Time) ([]domain.Appointment, error)
 	// ListByPatient returns the patient's appointments, most recent first.
 	ListByPatient(ctx context.Context, patientID string) ([]domain.Appointment, error)
+	// SaveEnergy records an estimate attempt at attemptedAt. An estimated e is
+	// written only while the stored energy is still pending; a pending e only
+	// records the attempt. It never touches status or version.
+	SaveEnergy(ctx context.Context, id string, e domain.Energy, attemptedAt time.Time) error
+	// PendingEnergy returns booked appointments starting after now whose energy
+	// is pending, least recently attempted first, at most limit.
+	PendingEnergy(ctx context.Context, now time.Time, limit int) ([]domain.Appointment, error)
 }
 
 type Service struct {
@@ -73,6 +80,12 @@ type Service struct {
 	Price     Pricing
 	// Cache is optional (nil with CACHE_ENABLED=false): days are invalidated after commit.
 	Cache AvailabilityCache
+	// Energy is optional (nil: every portal appointment stays pending, ADR-009).
+	Energy EnergyEstimator
+	// Tariff prices portal consultations; partner bookings use Price.
+	Tariff domain.Tariff
+	// EnergyBudget bounds the inline provider call (0: DefaultEnergyBudget).
+	EnergyBudget time.Duration
 }
 
 func DoctorKey(id string) string  { return "doctor:" + id }
@@ -136,6 +149,10 @@ func (s *Service) book(ctx context.Context, patientID, doctorID string, startAt 
 		if err != nil {
 			return err
 		}
+		booked.Energy = domain.Energy{Status: domain.EnergyPending}
+		if partner != nil {
+			booked.Energy.Status = domain.EnergyNotApplicable
+		}
 		if err := tx.Insert(ctx, booked); err != nil {
 			return err
 		}
@@ -154,6 +171,10 @@ func (s *Service) book(ctx context.Context, patientID, doctorID string, startAt 
 	if !replayed {
 		s.invalidate(ctx, booked)
 		slog.InfoContext(ctx, "appointment booked", "event", "appointment.booked", "appointment_id", booked.ID, "doctor_id", doctorID)
+		if partner == nil {
+			// After commit: the provider call never runs under the booking lock.
+			booked = s.priceBooking(ctx, booked, doctor)
+		}
 	}
 	return booked, replayed, nil
 }

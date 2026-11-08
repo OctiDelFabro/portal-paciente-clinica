@@ -18,9 +18,10 @@ var workdays = []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Th
 
 // doctors: appointment duration and weekly schedule (clinic time) that
 // availability uses (ADR-007). Booking keeps validating only lead time and overlaps.
+// Specialty (as in Medicos seed) selects the consultation energy profile (ADR-009).
 var doctors = map[string]domain.Doctor{
-	"doc-001": {ID: "doc-001", Duration: 30 * time.Minute, Schedule: domain.Schedule{Weekdays: workdays, Open: 9 * time.Hour, Close: 13 * time.Hour}},
-	"doc-002": {ID: "doc-002", Duration: 20 * time.Minute, Schedule: domain.Schedule{Weekdays: workdays, Open: 14 * time.Hour, Close: 18 * time.Hour}},
+	"doc-001": {ID: "doc-001", Duration: 30 * time.Minute, Specialty: "cardiologia", Schedule: domain.Schedule{Weekdays: workdays, Open: 9 * time.Hour, Close: 13 * time.Hour}},
+	"doc-002": {ID: "doc-002", Duration: 20 * time.Minute, Specialty: "pediatria", Schedule: domain.Schedule{Weekdays: workdays, Open: 14 * time.Hour, Close: 18 * time.Hour}},
 }
 
 // pat-002 representa una cuenta registrada pero no habilitada por recepcion (RF-13).

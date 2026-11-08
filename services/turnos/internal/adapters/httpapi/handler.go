@@ -40,6 +40,9 @@ type UseCases interface {
 	ListForPatient(ctx context.Context, patientID string) ([]domain.Appointment, error)
 	GetForPatient(ctx context.Context, patientID, id string) (domain.Appointment, error)
 	CancelForPatient(ctx context.Context, patientID, id, reason string) (domain.Appointment, error)
+	// Quote and PriceOf price portal consultations (ADR-009).
+	Quote(ctx context.Context, doctorID string, startAt time.Time) (app.Quote, error)
+	PriceOf(e domain.Energy) domain.Price
 }
 
 // PatientHeader carries the patient authenticated by the gateway (validated
@@ -76,6 +79,7 @@ func toDTO(a domain.Appointment) appointmentDTO {
 }
 
 func Register(mux *http.ServeMux, uc UseCases) {
+	registerQuote(mux, uc)
 	mux.HandleFunc("POST /appointments", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			PatientID string `json:"patientId"`
@@ -111,7 +115,7 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		}
 		booked.Inc()
 		w.Header().Set("Location", "/appointments/"+a.ID)
-		sendJSON(w, 201, toDTO(a))
+		sendJSON(w, 201, toPortalDTO(uc, a))
 	})
 	mux.HandleFunc("GET /appointments", func(w http.ResponseWriter, r *http.Request) {
 		patient, ok := authPatient(w, r)
@@ -127,9 +131,9 @@ func Register(mux *http.ServeMux, uc UseCases) {
 			mapError(w, err)
 			return
 		}
-		out := make([]appointmentDTO, 0, len(list))
+		out := make([]portalAppointmentDTO, 0, len(list))
 		for _, a := range list {
-			out = append(out, toDTO(a))
+			out = append(out, toPortalDTO(uc, a))
 		}
 		sendJSON(w, 200, map[string]any{"appointments": out})
 	})
@@ -149,7 +153,7 @@ func Register(mux *http.ServeMux, uc UseCases) {
 			mapError(w, err)
 			return
 		}
-		sendJSON(w, 200, toDTO(a))
+		sendJSON(w, 200, toPortalDTO(uc, a))
 	})
 	mux.HandleFunc("POST /appointments/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
@@ -178,7 +182,7 @@ func Register(mux *http.ServeMux, uc UseCases) {
 			return
 		}
 		cancelled.Inc()
-		sendJSON(w, 200, toDTO(a))
+		sendJSON(w, 200, toPortalDTO(uc, a))
 	})
 }
 

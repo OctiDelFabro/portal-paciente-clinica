@@ -15,11 +15,13 @@ import (
 	"portal-paciente-clinica/internal/platform/apikey"
 	"portal-paciente-clinica/internal/platform/obs"
 	"portal-paciente-clinica/services/turnos/internal/adapters/directory"
+	"portal-paciente-clinica/services/turnos/internal/adapters/energyprovider"
 	"portal-paciente-clinica/services/turnos/internal/adapters/httpapi"
 	"portal-paciente-clinica/services/turnos/internal/adapters/mysqlstore"
 	"portal-paciente-clinica/services/turnos/internal/adapters/outbox"
 	"portal-paciente-clinica/services/turnos/internal/adapters/rediscache"
 	"portal-paciente-clinica/services/turnos/internal/app"
+	"portal-paciente-clinica/services/turnos/internal/domain"
 )
 
 func env(key, def string) string {
@@ -44,6 +46,45 @@ func partnerConfig() (map[string]string, app.Pricing, int) {
 		os.Exit(1)
 	}
 	return keys, app.Pricing{Cents: cents, Currency: currency}, rate
+}
+
+// arsCents parses an ARS amount with at most two decimals ("25000", "180.50").
+func arsCents(key, def string) int64 {
+	cents, exact, err := domain.ParseScaled(env(key, def), 2)
+	if err != nil || !exact {
+		slog.Error("invalid " + key + ": want a non-negative ARS amount with at most two decimals")
+		os.Exit(1)
+	}
+	return cents
+}
+
+// energyConfig wires the consultation energy cost (ADR-009). Without
+// PROVIDER_ENERGY_URL every portal appointment stays "pending" and is charged
+// the base price only. The API key is never logged.
+func energyConfig(svc *app.Service) (enabled bool) {
+	svc.Tariff = domain.Tariff{
+		BaseCents:   arsCents("CONSULTATION_BASE_PRICE_ARS", "25000"),
+		CentsPerKWh: arsCents("ENERGY_TARIFF_ARS_PER_KWH", "180"),
+	}
+	budgetMS, err := strconv.Atoi(env("PROVIDER_ENERGY_INLINE_BUDGET_MS", strconv.Itoa(int(app.DefaultEnergyBudget/time.Millisecond))))
+	if err != nil || budgetMS < 100 || budgetMS > 5000 {
+		slog.Error("invalid PROVIDER_ENERGY_INLINE_BUDGET_MS: want 100-5000")
+		os.Exit(1)
+	}
+	svc.EnergyBudget = time.Duration(budgetMS) * time.Millisecond
+	url := os.Getenv("PROVIDER_ENERGY_URL")
+	if url == "" {
+		slog.Warn("PROVIDER_ENERGY_URL not set: energy cost stays pending", "event", "provider.disabled")
+		return false
+	}
+	key := os.Getenv("PROVIDER_ENERGY_API_KEY")
+	if key == "" {
+		slog.Error("PROVIDER_ENERGY_API_KEY is required when PROVIDER_ENERGY_URL is set")
+		os.Exit(1)
+	}
+	svc.Energy = energyprovider.New(url, key)
+	slog.Info("energy provider configured", "event", "provider.configured", "inline_budget_ms", budgetMS)
+	return true
 }
 
 // instanceID identifies this replica in X-Instance (ADR-012); compose sets
@@ -109,6 +150,10 @@ func main() {
 
 	keys, price, rate := partnerConfig()
 	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: time.Now, NewID: obs.NewID, Price: price}
+	if energyConfig(svc) {
+		// Retries pending estimates off the request path, 20 per minute at most.
+		go svc.RunEnergyReestimator(ctx, time.Minute, 20)
+	}
 	query, closeCache := availabilityQuery(svc)
 	defer closeCache()
 	mux := http.NewServeMux()

@@ -15,8 +15,9 @@ import (
 
 // fakeUC records which use case ran (and for which patient) when calls is set.
 type fakeUC struct {
-	err   error
-	calls *[]string
+	err    error
+	calls  *[]string
+	energy domain.Energy // returned in every appointment
 }
 
 func (f fakeUC) record(call string) {
@@ -27,7 +28,7 @@ func (f fakeUC) record(call string) {
 
 func (f fakeUC) Book(_ context.Context, p, d string, s time.Time) (domain.Appointment, error) {
 	f.record("Book:" + p)
-	return domain.Appointment{ID: "a-1", PatientID: p, DoctorID: d, StartAt: s, EndAt: s.Add(30 * time.Minute), Status: domain.StatusBooked, Version: 1}, f.err
+	return domain.Appointment{ID: "a-1", PatientID: p, DoctorID: d, StartAt: s, EndAt: s.Add(30 * time.Minute), Status: domain.StatusBooked, Version: 1, Energy: f.energy}, f.err
 }
 func (f fakeUC) Cancel(context.Context, string, string) (domain.Appointment, error) {
 	f.record("Cancel")
@@ -39,19 +40,19 @@ func (f fakeUC) Get(context.Context, string) (domain.Appointment, error) {
 }
 func (f fakeUC) BookForPatient(ctx context.Context, p, d string, s time.Time) (domain.Appointment, error) {
 	f.record("BookForPatient:" + p)
-	return domain.Appointment{ID: "a-1", PatientID: p, DoctorID: d, StartAt: s, EndAt: s.Add(30 * time.Minute), Status: domain.StatusBooked, Version: 1}, f.err
+	return domain.Appointment{ID: "a-1", PatientID: p, DoctorID: d, StartAt: s, EndAt: s.Add(30 * time.Minute), Status: domain.StatusBooked, Version: 1, Energy: f.energy}, f.err
 }
 func (f fakeUC) ListForPatient(_ context.Context, p string) ([]domain.Appointment, error) {
 	f.record("ListForPatient:" + p)
-	return []domain.Appointment{{ID: "a-1", PatientID: p, DoctorID: "doc-001", Status: domain.StatusBooked, Version: 1}}, f.err
+	return []domain.Appointment{{ID: "a-1", PatientID: p, DoctorID: "doc-001", Status: domain.StatusBooked, Version: 1, Energy: f.energy}}, f.err
 }
 func (f fakeUC) GetForPatient(_ context.Context, p, _ string) (domain.Appointment, error) {
 	f.record("GetForPatient:" + p)
-	return domain.Appointment{}, f.err
+	return domain.Appointment{ID: "a-1", PatientID: p, Status: domain.StatusBooked, Version: 1, Energy: f.energy}, f.err
 }
 func (f fakeUC) CancelForPatient(_ context.Context, p, _, _ string) (domain.Appointment, error) {
 	f.record("CancelForPatient:" + p)
-	return domain.Appointment{}, f.err
+	return domain.Appointment{ID: "a-1", PatientID: p, Status: domain.StatusCancelled, Version: 2, Energy: f.energy}, f.err
 }
 
 func post(t *testing.T, uc UseCases, path, body string) *httptest.ResponseRecorder {

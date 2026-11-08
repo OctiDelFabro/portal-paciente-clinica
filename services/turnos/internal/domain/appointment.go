@@ -34,6 +34,8 @@ type Appointment struct {
 	Status       Status
 	Version      int
 	CancelReason string
+	// Energy is the consultation's energy cost (ADR-009); it never affects booking rules.
+	Energy Energy
 }
 
 // Overlaps aplica la interseccion de intervalos semiabiertos [inicio, fin):
@@ -47,6 +49,8 @@ type Doctor struct {
 	ID       string
 	Duration time.Duration
 	Schedule Schedule
+	// Specialty selects the consultation equipment profile (energy.go).
+	Specialty string
 }
 
 // Patient reune el estado de habilitacion definido en RF-13.
