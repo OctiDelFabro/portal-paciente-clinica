@@ -4,6 +4,13 @@ scrape_configs:
   - job_name: gateway
     static_configs: [{targets: ["gateway:8080"]}]
   - job_name: turnos
-    static_configs: [{targets: ["turnos:8081"]}]
+    # Una entrada por instancia: la distribucion del balanceo se ve por `instance` (ADR-012).
+    static_configs: [{targets: ["turnos-1:8081", "turnos-2:8081"]}]
   - job_name: notifications
     static_configs: [{targets: ["notifications:8085"]}]
+  - job_name: pacientes
+    static_configs: [{targets: ["pacientes:8082"]}]
+  - job_name: medicos
+    static_configs: [{targets: ["medicos:8083"]}]
+  - job_name: historia-clinica
+    static_configs: [{targets: ["historia-clinica:8084"]}]

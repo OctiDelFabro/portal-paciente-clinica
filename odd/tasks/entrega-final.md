@@ -25,17 +25,18 @@ Brief, section 6 "Presentacion Grupal" (quoted verbatim):
 | ID | Specs | Route | Status | Commit / evidence |
 |---|---|---|---|---|
 | T0 | — | inline | done | shared Go dependencies added to go.mod before parallel units |
-| T1 | S3, S6, S9 | delegated (parallel) | pending | Médicos: MySQL + outbox + OpenSearch search + indexer + rebuild |
-| T2 | S7, S12 | delegated (parallel) | pending | Turnos: availability endpoint + Redis cache-aside + authenticated patient + instance field |
-| T3 | S2, A1 | delegated (parallel) | pending | Pacientes: register/login, bcrypt, JWT, MySQL |
-| T4 | S2, S12, A1 | delegated (parallel) | pending | Gateway: JWT validation, rate limit, Turnos load balancing, new routes, ADR-014 |
-| T5 | S6, S8 | delegated (parallel) | pending | Historia clínica: MongoDB + idempotent consumer of Turnos events + DLQ |
-| T6 | all | inline | pending | compose.yaml wiring, go mod tidy, seam check (full suite + compose up) |
-| T7 | S1 | inline | pending | Frontend: login → search → availability → booking → my appointments → history |
-| T8 | S5, S14 | inline | pending | Provider integration + consumer contract test (needs flow decision) |
+| T1 | S3, S6, S9 | delegated (parallel) | done (integration not run) | 14f5bb7 — unit tests green; integration vetted only (Docker down) |
+| T2 | S7, S12 | delegated (parallel) | done (integration not run) | 00c5dc3 — unit tests green; Redis/MySQL integration vetted only |
+| T3 | S2, A1 | delegated (parallel) | done (integration not run) | 28d8d24 — unit tests green; MySQL integration vetted only |
+| T4 | S2, S12, A1 | delegated (parallel) | done | 1c21a72 + fix 19fb425 — gateway tests green; verifier B1 fixed |
+| T5 | S6, S8 | delegated (parallel) | done (integration not run) | 6a2d866 — unit tests green; Mongo/RabbitMQ integration vetted only |
+| T6 | all | inline | done | compose stack up & healthy, full suite green, seam check passed end-to-end |
+| T7 | S1 | inline | done | 68a953f — React/Vite patient portal (login, search, booking pass, history, agenda); build green |
+| T8 | S5, S14 | delegated (parallel with T7) | done | 13e9592 — energy provider client + circuit breaker + quotes in Turnos + contract tests + provider stub; unit tests green |
 | T9 | S7, S13 | inline | pending | k6 load tests, before/after cache evidence, ADR-013 results |
 | T10 | S10, S11 | inline | pending | ADR-004, ARCHITECTURE limitations, VERIFICACION, POSTMORTEM |
 | T11 | S4 | inline | blocked | cloud deploy (pending account) |
+| T12 | S1, S2 | inline | pending | doctor accounts (role doctor), doctor agenda in Turnos, doctor-to-appointment check in Historia, portal routes reject requests without X-Patient-Id |
 
 Route evidence: T1–T5 run as parallel writers (Writer trigger (a)): five independent units with disjoint edit surfaces under `services/<name>/**` and `gateway/**`, each several files and 100+ lines. Shared files (`compose.yaml`, `go.mod`, `docs/ARCHITECTURE.md`, `README.md`) are owned by the parent (T0, T6, T10).
 
@@ -46,3 +47,10 @@ Route evidence: T1–T5 run as parallel writers (Writer trigger (a)): five indep
 - L4: Cloud: Render Free sleeps after 15 min (about 1 min cold start) and has no free MySQL; Oracle ARM capacity unavailable for the user. Decision deferred by the user; code work continues.
 - L5: Open decision: which microservice and business flow consumes the provider's energy estimate (S14).
 - L6 (2026-11-08): Decision: appointment cost. When booking, Turnos asks the provider for the kWh of the equipment that consultation uses and adds the energy cost (kWh × own tariff) to the appointment price shown before confirming. If the provider fails, the booking still succeeds and the energy cost stays "pending" (controlled degradation). T8 starts after T2 to avoid editing services/turnos concurrently.
+- L7: Parallel writers T1–T5 delivered; Docker unavailable, so every integration test is written and vetted but not run (pending T6).
+- L8: Independent verifier on 1c21a72/28d8d24 (item 2): blocker B1, a client `Connection: X-Patient-Id` header made ReverseProxy drop the gateway-set identity, so a patient could act as any other. Fixed in 19fb425 with regression tests (RED observed, then GREEN); also future `iat` and unknown roles rejected. Advisories: Turnos/Pacientes fail open without X-Patient-Id (T12), rate-limit bucket map growth when full, register 409 reveals emails, login allowed for not-enabled accounts.
+- L9: Frontend direction chosen by the user: boarding pass and live board (impeccable, Operate, code-led). PRODUCT.md and surface brief written. Doctor role needs backend support (T12).
+- L10 (2026-11-08): T7 (frontend) committed in 68a953f; T8 (energy provider client, contract tests, quote and MySQL persistence in Turnos, provider-stub) committed in 13e9592. Next: T6 compose wiring & integration tests once Docker is running.
+- L11 (2026-11-08): T6 completed. Docker stack up and healthy (gateway, turnos-1, turnos-2, pacientes, medicos, historia-clinica, notifications, provider-stub, mysql, mongodb, rabbitmq, opensearch, redis, prometheus, grafana, jaeger, mailpit). Seam check verified end-to-end: registration, JWT login, OpenSearch doctor search, Turnos quote with energy calculation from provider-stub, booking, RabbitMQ outbox publishing, Historia Clínica consumer in MongoDB, and timeline reading via Gateway.
+
+

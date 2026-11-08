@@ -15,19 +15,32 @@ services:
       HTTP_ADDR: 0.0.0.0:8080
       # Unico puerto que se publica a otros grupos: solo /v1 y /healthz (ADR-008).
       PUBLIC_HTTP_ADDR: 0.0.0.0:8088
-      TURNOS_URL: http://turnos:8081
+      # Balanceo round-robin entre instancias sanas de Turnos (ADR-012).
+      TURNOS_URLS: http://turnos-1:8081,http://turnos-2:8081
       NOTIFICATIONS_URL: http://notifications:8085
-    depends_on: [turnos, notifications]
+      PACIENTES_URL: http://pacientes:8082
+      MEDICOS_URL: http://medicos:8083
+      HISTORIA_URL: http://historia-clinica:8084
+      # Mismo secreto que Pacientes para validar los JWT del portal (ADR-014).
+      JWT_SECRET: ${JWT_SECRET:?Definir JWT_SECRET (32 bytes o mas)}
+      GATEWAY_RATE_LIMIT_RPS: ${GATEWAY_RATE_LIMIT_RPS:-10}
+      GATEWAY_RATE_LIMIT_BURST: ${GATEWAY_RATE_LIMIT_BURST:-20}
+    depends_on: [turnos-1, turnos-2, notifications, pacientes, medicos, historia-clinica]
     ports: ["127.0.0.1:8080:8080", "127.0.0.1:8088:8088"]
-  turnos:
+  turnos-1: &turnos
     build:
       context: .
       dockerfile: infra/Dockerfile.backend
       args:
         SERVICE_PATH: ./services/turnos/cmd
-    environment:
+    hostname: turnos-1
+    environment: &turnos-env
       <<: *otel
+      INSTANCE_ID: turnos-1
       HTTP_ADDR: 0.0.0.0:8081
+      REDIS_ADDR: redis:6379
+      # false desactiva la cache para la medicion de antes/despues (ADR-007).
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
       TURNOS_DB_DSN: turnos:${TURNOS_DB_PASSWORD:?Definir TURNOS_DB_PASSWORD}@tcp(mysql:3306)/turnos
       RABBITMQ_URL: amqp://localuser:${RABBITMQ_PASSWORD:?Definir RABBITMQ_PASSWORD}@rabbitmq:5672/
       # Capacidad publicada (docs/contracts/README.md): consumidor:clave separados por coma.
@@ -35,10 +48,23 @@ services:
       TURNOS_PARTNER_PRICE_CENTS: ${TURNOS_PARTNER_PRICE_CENTS:-2500000}
       TURNOS_PARTNER_CURRENCY: ${TURNOS_PARTNER_CURRENCY:-ARS}
       TURNOS_PARTNER_RATE: ${TURNOS_PARTNER_RATE:-60}
+      PROVIDER_ENERGY_URL: ${PROVIDER_ENERGY_URL:-http://provider-stub:8090}
+      PROVIDER_ENERGY_API_KEY: ${PROVIDER_ENERGY_API_KEY:-dev-renewable-energy-key}
+      CONSULTATION_BASE_PRICE_ARS: ${CONSULTATION_BASE_PRICE_ARS:-25000}
+      ENERGY_TARIFF_ARS_PER_KWH: ${ENERGY_TARIFF_ARS_PER_KWH:-180}
     depends_on:
       mysql: {condition: service_healthy}
       rabbitmq: {condition: service_healthy}
+      redis: {condition: service_started}
+      provider-stub: {condition: service_started}
     ports: ["127.0.0.1:8081:8081"]
+  turnos-2:
+    <<: *turnos
+    hostname: turnos-2
+    environment:
+      <<: *turnos-env
+      INSTANCE_ID: turnos-2
+    ports: ["127.0.0.1:8091:8081"]
   notifications:
     build:
       context: .
@@ -64,9 +90,21 @@ services:
       context: .
       dockerfile: infra/Dockerfile.backend
     environment:
-      MOCK_API_KEYS: ${MOCK_API_KEYS:?Definir MOCK_API_KEYS}
+      MOCK_API_KEYS: ${MOCK_API_KEYS:-}
       MOCK_ADDR: 0.0.0.0:8085
     ports: ["127.0.0.1:8086:8085"]
+  provider-stub:
+    # Stub local del proveedor de energia renovable (ArquitecturasoftwareRenewableEnergy v1)
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.backend
+      args:
+        SERVICE_PATH: ./services/provider-stub/cmd
+    environment:
+      STUB_ADDR: 0.0.0.0:8090
+      STUB_API_KEY: ${PROVIDER_ENERGY_API_KEY:-dev-renewable-energy-key}
+      STUB_MODE: ok
+    ports: ["127.0.0.1:8090:8090"]
   pacientes:
     build:
       context: .
@@ -74,7 +112,14 @@ services:
       args:
         SERVICE_PATH: ./services/pacientes/cmd
     environment:
+      <<: *otel
       HTTP_ADDR: 0.0.0.0:8082
+      PACIENTES_DB_DSN: pacientes:${PACIENTES_DB_PASSWORD:?Definir PACIENTES_DB_PASSWORD}@tcp(mysql:3306)/pacientes
+      JWT_SECRET: ${JWT_SECRET:?Definir JWT_SECRET (32 bytes o mas)}
+      # Opcional: contrasena de las cuentas demo sembradas (pat-001, pat-002, pat-003).
+      DEMO_PATIENT_PASSWORD: ${DEMO_PATIENT_PASSWORD:-}
+    depends_on:
+      mysql: {condition: service_healthy}
     ports: ["127.0.0.1:8082:8082"]
   medicos:
     build:
@@ -83,7 +128,15 @@ services:
       args:
         SERVICE_PATH: ./services/medicos/cmd
     environment:
+      <<: *otel
       HTTP_ADDR: 0.0.0.0:8083
+      MEDICOS_DB_DSN: medicos:${MEDICOS_DB_PASSWORD:?Definir MEDICOS_DB_PASSWORD}@tcp(mysql:3306)/medicos
+      RABBITMQ_URL: amqp://localuser:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+      OPENSEARCH_URL: http://opensearch:9200
+    depends_on:
+      mysql: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+      opensearch: {condition: service_started}
     ports: ["127.0.0.1:8083:8083"]
   historia-clinica:
     build:
@@ -92,7 +145,14 @@ services:
       args:
         SERVICE_PATH: ./services/historia-clinica/cmd
     environment:
+      <<: *otel
       HTTP_ADDR: 0.0.0.0:8084
+      MONGO_URI: mongodb://localroot:${MONGO_ROOT_PASSWORD}@mongodb:27017/?authSource=admin
+      MONGO_DB: historia_clinica
+      RABBITMQ_URL: amqp://localuser:${RABBITMQ_PASSWORD}@rabbitmq:5672/
+    depends_on:
+      mongodb: {condition: service_started}
+      rabbitmq: {condition: service_healthy}
     ports: ["127.0.0.1:8084:8084"]
   mysql:
     image: mysql:8.4
@@ -100,6 +160,8 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Definir MYSQL_ROOT_PASSWORD}
       TURNOS_DB_PASSWORD: ${TURNOS_DB_PASSWORD}
       NOTIF_DB_PASSWORD: ${NOTIF_DB_PASSWORD}
+      PACIENTES_DB_PASSWORD: ${PACIENTES_DB_PASSWORD}
+      MEDICOS_DB_PASSWORD: ${MEDICOS_DB_PASSWORD}
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 5s

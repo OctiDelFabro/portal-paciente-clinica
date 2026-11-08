@@ -10,11 +10,17 @@ sql_quote() { printf "%s" "$1" | sed "s/'/''/g"; }
 
 TURNOS_PW=$(sql_quote "$TURNOS_DB_PASSWORD")
 NOTIF_PW=$(sql_quote "$NOTIF_DB_PASSWORD")
+PACIENTES_PW=$(sql_quote "$PACIENTES_DB_PASSWORD")
+MEDICOS_PW=$(sql_quote "$MEDICOS_DB_PASSWORD")
 
 mysql -uroot -p"$MYSQL_ROOT_PASSWORD" <<SQL
 CREATE USER IF NOT EXISTS 'turnos'@'%' IDENTIFIED BY '${TURNOS_PW}';
 GRANT ALL PRIVILEGES ON turnos.* TO 'turnos'@'%';
 CREATE USER IF NOT EXISTS 'notificaciones'@'%' IDENTIFIED BY '${NOTIF_PW}';
 GRANT ALL PRIVILEGES ON notificaciones.* TO 'notificaciones'@'%';
+CREATE USER IF NOT EXISTS 'pacientes'@'%' IDENTIFIED BY '${PACIENTES_PW}';
+GRANT ALL PRIVILEGES ON pacientes.* TO 'pacientes'@'%';
+CREATE USER IF NOT EXISTS 'medicos'@'%' IDENTIFIED BY '${MEDICOS_PW}';
+GRANT ALL PRIVILEGES ON medicos.* TO 'medicos'@'%';
 FLUSH PRIVILEGES;
 SQL
