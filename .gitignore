@@ -5,3 +5,5 @@ frontend/dist/
 *.exe
 *.log
 
+.impeccable/review/
+.playwright-mcp/
