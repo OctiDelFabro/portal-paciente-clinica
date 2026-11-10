@@ -5,6 +5,7 @@ package mysqlstore
 import (
 	"context"
 	"fmt"
+	"portal-paciente-clinica/internal/platform/obs"
 	"portal-paciente-clinica/services/turnos/internal/adapters/directory"
 	"portal-paciente-clinica/services/turnos/internal/app"
 	"portal-paciente-clinica/services/turnos/internal/domain"
@@ -18,7 +19,7 @@ func TestReviewPaginationUnicodeReasonAndFrozenTariff(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	tariff := domain.Tariff{BaseCents: 2500000, CentsPerKWh: 18000}
-	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now }, NewID: func() string { return "00000000-0000-4000-d000-000000000001" }, Tariff: tariff}
+	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now }, NewID: obs.NewID, Tariff: tariff}
 	a, err := svc.Book(ctx, "pat-001", "doc-001", nextWorkday(now).Add(9*time.Hour))
 	if err != nil {
 		t.Fatal(err)

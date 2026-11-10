@@ -41,3 +41,9 @@ La versión anterior del documento reportaba p50 de disponibilidad con caché de
 No hay garantía general de cero deadlocks ni de cero errores durante failover. MySQL tiene reintentos de errores de bloqueo y el gateway puede recibir escrituras fallidas antes de retirar una réplica. El proveedor usa 1.200 ms inline, 5 s en segundo plano y circuito tras cinco fallos; las cifras antiguas de 150 ms/dos fallos eran incorrectas.
 
 La API de socios de Hostinger se conserva desde `main`. Una comprobación de salud no prueba reserva/cancelación real ni integración con otro grupo. No se ejecutaron llamadas facturadas contra producción ni contra el proveedor real.
+
+## Reejecución después de desbloquear GitHub Actions
+
+La ejecución 42894115834 pudo iniciar y ejecutar los tests. Pasaron Go con detector de carreras, `go vet`, los tests del cliente y el build. La primera ejecución real detectó dos errores en los fixtures: selección del radio cubierto por la etiqueta en Chromium e IDs constantes compartidos por eventos distintos en MySQL. Ambos fixtures se corrigieron conservando sus comprobaciones.
+
+MongoDB 8.0 rechazó además el kernel del runner Ubuntu 24.04. Integración usa temporalmente Ubuntu 22.04 (kernel 6.8), conservando la imagen MongoDB 8.0 de la aplicación y sin omitir pruebas. El problema upstream y su corrección para Ubuntu están documentados en [SERVER-131779](https://jira.mongodb.org/browse/SERVER-131779); revisar el runner cuando el parche de MongoDB 8 esté publicado y probado. El workflow muestra `uname -r` para conservar evidencia del kernel utilizado. Consultar el resultado del último commit del PR para el estado final de la reejecución.

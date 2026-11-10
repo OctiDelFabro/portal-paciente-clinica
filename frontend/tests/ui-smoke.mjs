@@ -221,7 +221,10 @@ try {
   await page
     .getByRole("button", { name: "Ver disponibilidad de Laura Gómez" })
     .click();
-  await page.locator('input[name="slot"]').check();
+  // The radio is visually covered by its label; select the visible control
+  // just as a user does, then verify the native checked state.
+  await page.locator("label.slot").click();
+  assert.ok(await page.locator('input[name="slot"]').isChecked());
   await page
     .getByRole("button", { name: "Confirmar turno", exact: true })
     .click();
