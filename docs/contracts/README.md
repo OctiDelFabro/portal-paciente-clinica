@@ -4,7 +4,13 @@ Permite que un sistema de otro grupo **reserve, consulte y cancele turnos médic
 - Contrato formal: [turnos-partner-v1.openapi.json](turnos-partner-v1.openapi.json), OpenAPI 3.1.1, versión de API **1.0.0**.
 - Decisión y justificación: [ADR-008](../adr/ADR-008-Contrato-propio.md).
 - Consumidor asignado: **Car Cruds** (concesionaria, servicio Empleados).
-- Estado: operativo en el entorno local con `docker compose`; la URL pública se comunica a cada consumidor junto con su clave.
+- Estado: desplegado y verificado en producción. URL pública: `https://api-turnos.srv1779429.hstgr.cloud`; salud: [`/healthz`](https://api-turnos.srv1779429.hstgr.cloud/healthz). Todos los endpoints de esta capacidad llevan el prefijo `/v1`.
+
+## Conexión al despliegue
+- **Base URL:** `https://api-turnos.srv1779429.hstgr.cloud/v1`
+- **Autenticación:** header `X-API-Key`, cuya clave se entrega al grupo consumidor por un canal privado.
+- **Prueba segura:** `GET /v1/doctors` devuelve el catálogo. Sin una clave válida responde `401`.
+- **Importante:** integrar desde el backend del grupo consumidor; no poner la clave en el frontend, repositorio, capturas ni mensajes públicos.
 
 ## Camino rápido
 Todas las llamadas salen del **backend** del consumidor (nunca del frontend) y llevan `X-API-Key`.
