@@ -22,8 +22,9 @@ type bucket struct {
 type tokenBucket struct {
 	rate, burst float64
 
-	mu      sync.Mutex
-	buckets map[string]*bucket
+	mu        sync.Mutex
+	buckets   map[string]*bucket
+	nextPrune time.Time
 }
 
 func newTokenBucket(rps float64, burst int) *tokenBucket {
@@ -37,8 +38,12 @@ func (l *tokenBucket) Allow(key string, now time.Time) (bool, int) {
 	defer l.mu.Unlock()
 	b := l.buckets[key]
 	if b == nil {
-		if len(l.buckets) >= maxBuckets {
+		if len(l.buckets) >= maxBuckets && !now.Before(l.nextPrune) {
 			l.prune(now)
+			l.nextPrune = now.Add(time.Second)
+		}
+		if len(l.buckets) >= maxBuckets {
+			return false, 1
 		}
 		b = &bucket{tokens: l.burst, last: now}
 		l.buckets[key] = b

@@ -8,8 +8,7 @@ import (
 )
 
 // Portal use cases for a patient authenticated by the gateway (X-Patient-Id
-// from a validated JWT). The identity is trusted; the seed directory may not
-// know the patient yet, but a known patient that is not enabled stays rejected.
+// from a validated JWT). Verification is always read from Pacientes.
 
 // BookForPatient books for an authenticated patient.
 func (s *Service) BookForPatient(ctx context.Context, patientID, doctorID string, startAt time.Time) (domain.Appointment, error) {

@@ -154,10 +154,12 @@ func (s *Service) HandleBooking(ctx context.Context, b Booking) (duplicate bool,
 		return false, err
 	}
 	changed, err := s.Store.ApplyBooking(ctx, b)
-	if err != nil || !changed {
-		return !changed && err == nil, err
+	if err != nil {
+		return false, err
 	}
-	return false, s.IndexDoctor(ctx, b.DoctorID)
+	// Persisting the projection is only the first effect. A retry must still
+	// repair OpenSearch if a previous upsert failed after the SQL commit.
+	return !changed, s.IndexDoctor(ctx, b.DoctorID)
 }
 
 // Reindex rebuilds the whole index from MySQL into a new version.

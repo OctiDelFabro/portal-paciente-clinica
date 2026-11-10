@@ -103,7 +103,7 @@ func TestBookingWithPendingEnergyIsReestimated(t *testing.T) {
 		NewID:  func() string { return fmt.Sprintf("00000000-0000-4000-c000-%012d", idSeq.Add(1)) },
 		Energy: est, Tariff: domain.Tariff{BaseCents: 2_500_000, CentsPerKWh: 18_000}}
 	ctx := context.Background()
-	a, err := svc.BookForPatient(ctx, "jwt-patient-9", "doc-001", now.Add(72*time.Hour).Truncate(time.Hour))
+	a, err := svc.BookForPatient(ctx, "pat-001", "doc-001", nextWorkday(now).Add(9*time.Hour))
 	if err != nil || a.Energy.Status != domain.EnergyPending {
 		t.Fatalf("booking: %+v %v", a, err)
 	}

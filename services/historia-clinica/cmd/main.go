@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"portal-paciente-clinica/internal/platform/obs"
+	"portal-paciente-clinica/services/historia-clinica/internal/access"
 	"portal-paciente-clinica/services/historia-clinica/internal/api"
 	"portal-paciente-clinica/services/historia-clinica/internal/repository"
 	"portal-paciente-clinica/services/historia-clinica/internal/service"
@@ -25,6 +26,10 @@ func env(key, def string) string {
 }
 
 func main() {
+	if len(os.Getenv("INTERNAL_API_KEY")) < 32 {
+		slog.Error("INTERNAL_API_KEY must contain at least 32 bytes")
+		os.Exit(1)
+	}
 	obs.NewLogger("historia-clinica")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -53,7 +58,7 @@ func main() {
 	}
 	defer repo.Close(context.Background())
 
-	svc := &service.Service{Store: repo, Now: time.Now, NewID: obs.NewID}
+	svc := &service.Service{Access: access.New(env("PACIENTES_URL", "http://127.0.0.1:8082"), env("TURNOS_URLS", "http://127.0.0.1:8081"), os.Getenv("INTERNAL_API_KEY")), Store: repo, Now: time.Now, NewID: obs.NewID}
 	consumer := &api.Consumer{URL: env("RABBITMQ_URL", "amqp://guest:guest@127.0.0.1:5672/"), Service: svc}
 	go consumer.Run(ctx)
 

@@ -361,7 +361,7 @@ func TestTokenIssuedInTheFutureIsRejected(t *testing.T) {
 }
 
 func TestOnlyKnownRolesAreAccepted(t *testing.T) {
-	for role, want := range map[string]int{"patient": 200, "doctor": 200, "admin": 401, "reception": 401} {
+	for role, want := range map[string]int{"patient": 200, "doctor": 200, "admin": 200, "reception": 200, "invented": 401} {
 		s := newStack(t)
 		c := validClaims()
 		c["role"] = role

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { configureHttp } from './api/http';
+import { OperationsScreen } from './features/operations/OperationsScreen';
 import { AuthScreen } from './features/auth/AuthScreen';
 import { AppointmentsBoard } from './features/appointments/AppointmentsBoard';
 import { AgendaScreen } from './features/doctor/AgendaScreen';
@@ -13,6 +14,7 @@ const PATIENT_VIEWS: View[] = ['search', 'appointments', 'history'];
 function viewFromHash(session: Session): View {
   const raw = window.location.hash.replace(/^#\/?/, '') as View;
   if (session.role === 'doctor') return 'agenda';
+  if (session.role === 'admin' || session.role === 'reception') return 'operations';
   return PATIENT_VIEWS.includes(raw) ? raw : 'search';
 }
 
@@ -45,8 +47,9 @@ export function App() {
         onSignedIn={(s) => {
           saveSession(s);
           setSession(s);
-          window.location.hash = s.role === 'doctor' ? '#/agenda' : '#/search';
-          setView(s.role === 'doctor' ? 'agenda' : 'search');
+          const initial = s.role === 'doctor' ? 'agenda' : s.role === 'patient' ? 'search' : 'operations';
+          window.location.hash = `#/${initial}`;
+          setView(initial);
         }}
       />
     );
@@ -68,6 +71,7 @@ export function App() {
         {view === 'appointments' ? <AppointmentsBoard /> : null}
         {view === 'history' ? <HistoryScreen /> : null}
         {view === 'agenda' ? <AgendaScreen /> : null}
+        {view === 'operations' ? <OperationsScreen session={session} /> : null}
       </main>
     </div>
   );

@@ -1,15 +1,31 @@
-import { CalendarClock, ClipboardList, FileHeart, LogOut, Search } from 'lucide-react';
-import type { Role } from '../api/types';
+import {
+  CalendarClock,
+  ClipboardList,
+  FileHeart,
+  LogOut,
+  Search,
+} from "lucide-react";
+import type { Role } from "../api/types";
 
-export type View = 'search' | 'appointments' | 'history' | 'agenda';
+export type View =
+  | "search"
+  | "appointments"
+  | "history"
+  | "agenda"
+  | "operations";
 
-const ITEMS: Record<Role, { view: View; label: string; Icon: typeof Search }[]> = {
+const ITEMS: Record<
+  Role,
+  { view: View; label: string; Icon: typeof Search }[]
+> = {
   patient: [
-    { view: 'search', label: 'Buscar médico', Icon: Search },
-    { view: 'appointments', label: 'Mis turnos', Icon: CalendarClock },
-    { view: 'history', label: 'Historia clínica', Icon: FileHeart },
+    { view: "search", label: "Buscar médico", Icon: Search },
+    { view: "appointments", label: "Mis turnos", Icon: CalendarClock },
+    { view: "history", label: "Historia clínica", Icon: FileHeart },
   ],
-  doctor: [{ view: 'agenda', label: 'Mi agenda', Icon: ClipboardList }],
+  doctor: [{ view: "agenda", label: "Mi agenda", Icon: ClipboardList }],
+  admin: [{ view: "operations", label: "Administración", Icon: ClipboardList }],
+  reception: [{ view: "operations", label: "Recepción", Icon: ClipboardList }],
 };
 
 interface RailProps {
@@ -20,7 +36,13 @@ interface RailProps {
   onLogout: () => void;
 }
 
-export function Rail({ role, current, fullName, onNavigate, onLogout }: RailProps) {
+export function Rail({
+  role,
+  current,
+  fullName,
+  onNavigate,
+  onLogout,
+}: RailProps) {
   return (
     <aside className="rail">
       <div className="rail__brand">
@@ -40,7 +62,7 @@ export function Rail({ role, current, fullName, onNavigate, onLogout }: RailProp
               <a
                 href={`#/${view}`}
                 className="rail__link"
-                aria-current={current === view ? 'page' : undefined}
+                aria-current={current === view ? "page" : undefined}
                 onClick={(e) => {
                   e.preventDefault();
                   onNavigate(view);
@@ -55,7 +77,16 @@ export function Rail({ role, current, fullName, onNavigate, onLogout }: RailProp
       </nav>
 
       <div className="rail__session">
-        <span className="label label--inverse">{role === 'doctor' ? 'Profesional' : 'Paciente'}</span>
+        <span className="label label--inverse">
+          {
+            {
+              doctor: "Profesional",
+              patient: "Paciente",
+              admin: "Administración",
+              reception: "Recepción",
+            }[role]
+          }
+        </span>
         <span className="rail__user">{fullName}</span>
         <button type="button" className="rail__logout" onClick={onLogout}>
           <LogOut size={16} strokeWidth={2} aria-hidden="true" />

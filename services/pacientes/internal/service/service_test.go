@@ -251,8 +251,8 @@ func TestSeedDemoIsIdempotentAndMatchesSharedIDs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(store.byID) != 5 {
-		t.Fatalf("want 5 demo accounts, got %d", len(store.byID))
+	if len(store.byID) != 7 {
+		t.Fatalf("want 7 demo accounts, got %d", len(store.byID))
 	}
 	want := map[string]struct {
 		email   string
@@ -284,7 +284,7 @@ func TestSeedDemoWithoutPasswordCreatesProfilesOnly(t *testing.T) {
 	if err := svc.SeedDemo(context.Background(), ""); err != nil {
 		t.Fatal(err)
 	}
-	if len(store.byID) != 5 || store.byID["pat-001"].PasswordHash != "" {
+	if len(store.byID) != 7 || store.byID["pat-001"].PasswordHash != "" {
 		t.Fatalf("profiles must exist without password hashes, got %d profiles", len(store.byID))
 	}
 	if err := svc.SeedDemo(context.Background(), "demo-pass-2"); err != nil {

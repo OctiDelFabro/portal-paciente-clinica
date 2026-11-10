@@ -9,6 +9,9 @@ Per-patient clinical timeline on MongoDB (ADR-003), fed by Turnos domain events 
 | `HTTP_ADDR` | `127.0.0.1:8084` | Listen address |
 | `MONGO_URI` | `mongodb://127.0.0.1:27017` | MongoDB connection string |
 | `MONGO_DB` | `historia_clinica` | Database name |
+| `PACIENTES_URL` | `http://127.0.0.1:8082` | Current verification and responsible adult lookup |
+| `TURNOS_URLS` | `http://127.0.0.1:8081` | Uncancelled doctor/patient relationships; comma-separated replicas |
+| `INTERNAL_API_KEY` | required, at least 32 bytes | Backend service authentication, not forwarded by the browser |
 | `RABBITMQ_URL` | `amqp://guest:guest@127.0.0.1:5672/` | Broker URL |
 
 On startup the service retries the MongoDB connection (30 attempts, 2 s apart), creates the `encounters` validator and indexes, then starts the consumer and the HTTP server.
@@ -20,7 +23,8 @@ Reached through the gateway as `/api/historia/*` (prefix stripped, JWT required)
 | Method and path | Who | Result |
 |---|---|---|
 | `GET /healthz` | anyone | `200 {"status":"ok","mongo":"up"}` or `503 {"status":"degraded","mongo":"down"}` |
-| `GET /records/me` | authenticated user | `200 {"patientId","records":[...]}`: the caller's encounters, newest `startAt` first, with notes; `401` without `X-Patient-Id` |
+| `GET /records/me` | verified patient | `200 {"patientId","records":[...]}`: the caller's encounters, newest `startAt` first, with notes; `401` without `X-Patient-Id` |
+| `GET /records/patients/{patientId}/timeline` | verified guardian of a minor or doctor with an uncancelled appointment | `200` timeline, `403` without relationship, `503` if authorization dependencies fail |
 | `POST /records/{appointmentId}/notes` | `X-User-Role: doctor` | body `{"text":"..."}` (1–4000 characters); `201` note; `401` no identity; `403` other roles; `400` invalid JSON; `422` invalid text; `404` unknown appointment; `409 ENCOUNTER_CANCELLED` |
 | `GET /metrics` | Prometheus | `events_consumed_total{result}`, `historia_dlq_depth`, HTTP metrics |
 
@@ -48,7 +52,7 @@ go test -tags integration ./services/historia-clinica/...    # real MongoDB and 
 
 ## Known limitations
 
-- Any doctor can add a note to any scheduled encounter: the gateway forwards the role from the JWT but no doctor identity, so the doctor-to-appointment link is not checked yet.
-- Minors and responsible adults: `GET /records/me` returns only the caller's own records; access by a responsible adult is not implemented.
+- Notes require the assigned doctor identity, current verification and an uncancelled clinical relationship. Reception and administration cannot read clinical content.
+- `GET /records/me` is the caller’s timeline. The patient-specific endpoint also allows a verified adult with a currently verified minor relationship; the general minor selector in the frontend remains pending.
 - Notes cannot be corrected or deleted; there is no retention or backup policy yet (ADR-003).
 - Rescheduling events are not consumed because Turnos does not publish them yet.

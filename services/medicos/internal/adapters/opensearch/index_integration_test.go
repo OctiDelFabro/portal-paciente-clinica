@@ -66,6 +66,7 @@ func TestSearchFiltersSortsAndPaginatesOnRealEngine(t *testing.T) {
 		{"next available first", domain.Query{Sort: domain.SortNextAvailable, Page: 1, Size: 10}, []string{"doc-002", "doc-001"}},
 		{"specialty filter", domain.Query{Specialty: "cardiologia", Page: 1, Size: 10}, []string{"doc-001"}},
 		{"accepts minors", domain.Query{AcceptsMinors: &yes, Page: 1, Size: 10}, []string{"doc-002"}},
+		{"specialty text with accent", domain.Query{Q: "pediatría", Page: 1, Size: 10}, []string{"doc-002"}},
 		{"full text with typo", domain.Query{Q: "pereira", Page: 1, Size: 10}, []string{"doc-002"}},
 		{"second page", domain.Query{Sort: domain.SortName, Page: 2, Size: 1}, []string{"doc-002"}},
 	}

@@ -21,6 +21,8 @@ const energyColumns = "COALESCE(CAST(energy_kwh AS CHAR), ''), COALESCE(CAST(ene
 // by the re-estimator. MySQL 8.4 has no ADD COLUMN IF NOT EXISTS, so each
 // column is checked in information_schema first.
 var energyDDL = []struct{ column, ddl string }{
+	{"base_price_cents", "ALTER TABLE appointments ADD COLUMN base_price_cents BIGINT NULL"},
+	{"energy_tariff_cents_per_kwh", "ALTER TABLE appointments ADD COLUMN energy_tariff_cents_per_kwh BIGINT NULL"},
 	{"energy_kwh", "ALTER TABLE appointments ADD COLUMN energy_kwh DECIMAL(16,6) NULL"},
 	{"energy_cost_ars", "ALTER TABLE appointments ADD COLUMN energy_cost_ars DECIMAL(14,2) NULL"},
 	{"energy_status", "ALTER TABLE appointments ADD COLUMN energy_status VARCHAR(16) NOT NULL DEFAULT 'pending'"},

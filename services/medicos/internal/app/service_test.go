@@ -230,8 +230,8 @@ func TestHandleBookingIsIdempotent(t *testing.T) {
 	if err != nil || !dup {
 		t.Fatalf("second delivery must be a duplicate: dup=%v err=%v", dup, err)
 	}
-	if len(ix.upserts) != 1 {
-		t.Fatalf("duplicate must not reindex, got %d upserts", len(ix.upserts))
+	if len(ix.upserts) != 2 {
+		t.Fatalf("duplicate must repair the derived index, got %d upserts", len(ix.upserts))
 	}
 	if _, err := svc.HandleBooking(context.Background(), Booking{TurnID: "t-2", DoctorID: "doc-999", Version: 1}); !errors.Is(err, ErrUnknownDoctor) {
 		t.Fatalf("unknown doctor: want ErrUnknownDoctor, got %v", err)
@@ -262,5 +262,18 @@ func TestReindexBuildsEveryDoctorFromMySQL(t *testing.T) {
 		if d.NextAvailableAt == nil || !d.NextAvailableAt.Equal(now.Add(domain.MinLeadTime)) {
 			t.Fatalf("nextAvailableAt not computed for %+v", d)
 		}
+	}
+}
+
+func TestBookingRetryRepairsIndexAfterSQLCommit(t *testing.T) {
+	svc, _, ix := newService()
+	b := Booking{TurnID: "retry-1", DoctorID: "doc-001", Start: now.Add(48 * time.Hour), End: now.Add(49 * time.Hour), Active: true, Version: 1}
+	ix.err = ErrSearchUnavailable
+	if _, err := svc.HandleBooking(context.Background(), b); err == nil {
+		t.Fatal("expected outage")
+	}
+	ix.err = nil
+	if duplicate, err := svc.HandleBooking(context.Background(), b); err != nil || !duplicate || len(ix.upserts) != 1 {
+		t.Fatalf("index was not repaired: duplicate=%v err=%v docs=%d", duplicate, err, len(ix.upserts))
 	}
 }

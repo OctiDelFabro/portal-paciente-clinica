@@ -24,6 +24,10 @@ func fatal(msg string, err error) {
 }
 
 func main() {
+	if len(os.Getenv("INTERNAL_API_KEY")) < 32 {
+		slog.Error("INTERNAL_API_KEY must contain at least 32 bytes")
+		os.Exit(1)
+	}
 	obs.NewLogger("pacientes")
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
@@ -63,7 +67,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	(&api.HTTP{Service: svc, Health: func() error { return repo.Ping(ctx) }}).Register(mux)
+	(&api.HTTP{Service: svc, InternalKey: os.Getenv("INTERNAL_API_KEY"), Health: func() error { return repo.Ping(ctx) }}).Register(mux)
 	mux.Handle("GET /metrics", obs.MetricsHandler())
 
 	server := &http.Server{Addr: cfg.Addr, Handler: obs.Middleware("pacientes", mux), ReadHeaderTimeout: 3 * time.Second,

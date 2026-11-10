@@ -25,6 +25,7 @@ type HTTP struct {
 func (h *HTTP) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /healthz", h.health)
 	mux.HandleFunc("GET /records/me", h.myRecords)
+	mux.HandleFunc("GET /records/patients/{patientId}/timeline", h.myRecords)
 	mux.HandleFunc("POST /records/{appointmentId}/notes", h.addNote)
 	mux.HandleFunc("/records/me", methodNotAllowed)
 	mux.HandleFunc("/records/{appointmentId}/notes", methodNotAllowed)
@@ -48,8 +49,19 @@ func (h *HTTP) myRecords(w http.ResponseWriter, r *http.Request) {
 		sendError(w, 401, "UNAUTHORIZED", "Authenticated patient required.")
 		return
 	}
-	// The query is always scoped to the caller: there is no way to ask for another patient.
-	records, err := h.Service.Timeline(r.Context(), patientID)
+	role := r.Header.Get("X-User-Role")
+	if role != "patient" && role != "doctor" {
+		sendError(w, 403, "FORBIDDEN", "No tiene acceso a contenido clínico.")
+		return
+	}
+	if target := r.PathValue("patientId"); target != "" {
+		patientID = target
+	}
+	records, err := h.Service.TimelineFor(r.Context(), role, r.Header.Get("X-Patient-Id"), patientID)
+	if errors.Is(err, service.ErrForbidden) {
+		sendError(w, 403, "FORBIDDEN", "No existe un vínculo que habilite la consulta.")
+		return
+	}
 	if err != nil {
 		slog.ErrorContext(r.Context(), "timeline query failed", "event", "records.query_failed", "error", err.Error())
 		sendError(w, 503, "SERVICE_UNAVAILABLE", "Clinical records are temporarily unavailable.")
@@ -93,6 +105,8 @@ func (h *HTTP) addNote(w http.ResponseWriter, r *http.Request) {
 	doctorID := r.Header.Get("X-Patient-Id")
 	note, err := h.Service.AddNote(r.Context(), r.PathValue("appointmentId"), doctorID, role, req.Text)
 	switch {
+	case errors.Is(err, service.ErrAccessUnavailable):
+		sendError(w, 503, "AUTHORIZATION_UNAVAILABLE", "No pudimos verificar la autorización clínica.")
 	case errors.Is(err, service.ErrInvalidNote):
 		sendError(w, 422, "VALIDATION_ERROR", "text is required and must have at most 4000 characters.")
 	case errors.Is(err, service.ErrNotFound):

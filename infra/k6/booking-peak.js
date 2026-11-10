@@ -27,9 +27,10 @@ const PATIENTS = ['pat-001', 'pat-003'];
 export default function () {
   // 60% of bookings target the exact same slot to test lock contention and 409
   const isContended = Math.random() < 0.6;
-  const startAt = isContended 
-    ? '2026-11-15T10:00:00Z' 
-    : `2026-11-15T${String(11 + (__VU % 5)).padStart(2, '0')}:00:00Z`;
+  const day = new Date(Date.now() + 3 * 86400000);
+  day.setUTCHours(12, 0, 0, 0); // 09:00 ART, doc-001's opening
+  while (day.getUTCDay() === 0 || day.getUTCDay() === 6) day.setUTCDate(day.getUTCDate() + 1);
+  const startAt = new Date(day.getTime() + (isContended ? 0 : (__VU % 8) * 30 * 60000)).toISOString();
 
   const payload = JSON.stringify({
     doctorId: 'doc-001',

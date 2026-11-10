@@ -4,7 +4,9 @@ package domain
 
 import (
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // MinLeadTime es la anticipacion minima para reservar o cancelar.
@@ -22,6 +24,8 @@ var (
 	ErrOverlap          = errors.New("slot overlaps an active appointment of the doctor or the patient")
 	ErrAlreadyCancelled = errors.New("appointment already cancelled")
 	ErrPatientNotActive = errors.New("patient not enabled by reception")
+	ErrOutsideSchedule  = errors.New("outside doctor schedule")
+	ErrInvalidReason    = errors.New("invalid cancellation reason")
 	ErrInvalidDuration  = errors.New("doctor has no valid appointment duration")
 )
 
@@ -36,6 +40,8 @@ type Appointment struct {
 	CancelReason string
 	// Energy is the consultation's energy cost (ADR-009); it never affects booking rules.
 	Energy Energy
+	// Tariff is the immutable price snapshot captured when booking.
+	Tariff *Tariff
 }
 
 // Overlaps aplica la interseccion de intervalos semiabiertos [inicio, fin):
@@ -72,6 +78,9 @@ func Book(id string, patient Patient, doctor Doctor, startAt, now time.Time, exi
 	if startAt.Sub(now) < MinLeadTime {
 		return Appointment{}, ErrLeadTime
 	}
+	if !doctor.Schedule.Allows(startAt, doctor.Duration) {
+		return Appointment{}, ErrOutsideSchedule
+	}
 	endAt := startAt.Add(doctor.Duration)
 	for _, other := range existing {
 		if (other.DoctorID == doctor.ID || other.PatientID == patient.ID) && other.Overlaps(startAt, endAt) {
@@ -84,6 +93,9 @@ func Book(id string, patient Patient, doctor Doctor, startAt, now time.Time, exi
 // Cancel aplica la anticipacion minima de paciente y recepcion. El bloqueo de
 // agenda por el medico (RF-07) es una excepcion que no pasa por esta regla.
 func (a Appointment) Cancel(reason string, now time.Time) (Appointment, error) {
+	if utf8.RuneCountInString(reason) > 200 || strings.ContainsAny(reason, "\r\n\x00") {
+		return a, ErrInvalidReason
+	}
 	if a.Status == StatusCancelled {
 		return a, ErrAlreadyCancelled
 	}

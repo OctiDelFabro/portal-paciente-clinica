@@ -17,7 +17,7 @@ func (f fakeUC) Quote(_ context.Context, doctorID string, startAt time.Time) (ap
 	return app.Quote{DoctorID: doctorID, StartAt: startAt, Price: fakeTariff.Price(f.energy)}, f.err
 }
 
-func (f fakeUC) PriceOf(e domain.Energy) domain.Price { return fakeTariff.Price(e) }
+func (f fakeUC) PriceOf(a domain.Appointment) domain.Price { return fakeTariff.Price(a.Energy) }
 
 var estimated = fakeTariff.Estimated(381_000, "consumo-v1")
 

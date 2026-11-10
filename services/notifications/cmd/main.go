@@ -14,6 +14,7 @@ import (
 
 	"portal-paciente-clinica/internal/platform/apikey"
 	"portal-paciente-clinica/internal/platform/obs"
+	"portal-paciente-clinica/internal/platform/patientclient"
 	"portal-paciente-clinica/services/notifications/internal/api"
 	"portal-paciente-clinica/services/notifications/internal/contacts"
 	"portal-paciente-clinica/services/notifications/internal/mailer"
@@ -34,6 +35,10 @@ func fatal(msg string, err error) {
 }
 
 func main() {
+	if len(os.Getenv("INTERNAL_API_KEY")) < 32 {
+		slog.Error("INTERNAL_API_KEY must contain at least 32 bytes")
+		os.Exit(1)
+	}
 	obs.NewLogger("notifications")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -67,7 +72,7 @@ func main() {
 	}
 
 	svc := &service.Service{
-		Repo: repo, Contacts: contacts.Seed{}, Now: time.Now, NewID: obs.NewID, TTL: 24 * time.Hour,
+		Repo: repo, Contacts: contacts.HTTP{Patients: patientclient.New(env("PACIENTES_URL", "http://127.0.0.1:8082"), os.Getenv("INTERNAL_API_KEY"))}, Now: time.Now, NewID: obs.NewID, TTL: 24 * time.Hour,
 		Mailer:  mailer.SMTP{Addr: env("SMTP_ADDR", "127.0.0.1:1025"), From: env("MAIL_FROM", "no-reply@portal-clinica.example.test")},
 		Breaker: &service.Breaker{Threshold: 5, Cooldown: 30 * time.Second},
 	}

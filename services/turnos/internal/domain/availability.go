@@ -14,8 +14,7 @@ var ClinicZone = time.FixedZone("ART", -3*60*60)
 const dayLayout = "2006-01-02"
 
 // Schedule is a doctor's weekly working window: the same hours on each listed
-// weekday, as offsets from local midnight. Booking does not enforce it (an
-// existing contract); it only defines which slots availability offers.
+// weekday, as offsets from local midnight. Reads and writes enforce it.
 type Schedule struct {
 	Weekdays    []time.Weekday
 	Open, Close time.Duration
@@ -70,4 +69,16 @@ func overlapsDoctor(doctorID string, start, end time.Time, existing []Appointmen
 		}
 	}
 	return false
+}
+
+// Allows accepts starts inside the working window with the configured duration.
+// The API may start a consultation between grid boundaries; the grid is a UI
+// suggestion, while the authoritative constraints are hours and no overlap.
+func (s Schedule) Allows(start time.Time, duration time.Duration) bool {
+	local := start.In(ClinicZone)
+	if duration <= 0 || !slices.Contains(s.Weekdays, local.Weekday()) || s.Open < 0 || s.Close > 24*time.Hour || s.Close <= s.Open {
+		return false
+	}
+	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, ClinicZone)
+	return !local.Before(midnight.Add(s.Open)) && !local.Add(duration).After(midnight.Add(s.Close))
 }

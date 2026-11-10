@@ -103,11 +103,13 @@ func TestBookMapsBusinessErrors(t *testing.T) {
 		status int
 		code   string
 	}{
-		domain.ErrLeadTime:         {422, "LEAD_TIME_TOO_SHORT"},
-		domain.ErrOverlap:          {409, "SLOT_UNAVAILABLE"},
-		domain.ErrPatientNotActive: {403, "PATIENT_NOT_ENABLED"},
-		app.ErrUnknownDoctor:       {404, "UNKNOWN_DOCTOR"},
-		context.DeadlineExceeded:   {503, "UNAVAILABLE"},
+		domain.ErrLeadTime:          {422, "LEAD_TIME_TOO_SHORT"},
+		domain.ErrOutsideSchedule:   {422, "OUTSIDE_SCHEDULE"},
+		app.ErrDirectoryUnavailable: {503, "DIRECTORY_UNAVAILABLE"},
+		domain.ErrOverlap:           {409, "SLOT_UNAVAILABLE"},
+		domain.ErrPatientNotActive:  {403, "PATIENT_NOT_ENABLED"},
+		app.ErrUnknownDoctor:        {404, "UNKNOWN_DOCTOR"},
+		context.DeadlineExceeded:    {503, "UNAVAILABLE"},
 	}
 	for err, want := range cases {
 		rec := post(t, fakeUC{err: err}, "/appointments", valid)
@@ -121,6 +123,38 @@ func TestBookRejectsUnknownFieldsAndBadDates(t *testing.T) {
 	for _, body := range []string{`{"patientId":"p","doctorId":"d","startAt":"mañana"}`, `{"extra":1}`} {
 		if rec := post(t, fakeUC{}, "/appointments", body); rec.Code != 400 {
 			t.Errorf("%s: want 400, got %d", body, rec.Code)
+		}
+	}
+}
+
+func (f fakeUC) ListAppointments(ctx context.Context, role, caller string, page int) ([]domain.Appointment, bool, error) {
+	var list []domain.Appointment
+	var err error
+	if role == "doctor" {
+		list, err = f.ListForDoctor(ctx, caller)
+	} else {
+		list, err = f.ListForPatient(ctx, caller)
+	}
+	return list, false, err
+}
+
+func TestCancellationReasonMatchesTheUIContract(t *testing.T) {
+	for _, reason := range []string{"No puedo asistir por un problema de trabajo", strings.Repeat("ñ", 200)} {
+		body, _ := json.Marshal(map[string]string{"reason": reason})
+		rec := serve(fakeUC{}, "POST", "/appointments/a-1/cancel", string(body), "pat-001")
+		if rec.Code != 200 {
+			t.Fatalf("valid reason rejected: %d %s", rec.Code, rec.Body)
+		}
+	}
+	body, _ := json.Marshal(map[string]string{"reason": strings.Repeat("a", 201)})
+	if rec := serve(fakeUC{}, "POST", "/appointments/a-1/cancel", string(body), "pat-001"); rec.Code != 400 {
+		t.Fatalf("long reason accepted: %d", rec.Code)
+	}
+}
+func TestAppointmentsPageValidation(t *testing.T) {
+	for _, query := range []string{"0", "-1", "wat", "100001"} {
+		if rec := serve(fakeUC{}, "GET", "/appointments?page="+query, "", "pat-001"); rec.Code != 400 {
+			t.Fatalf("page %s: %d", query, rec.Code)
 		}
 	}
 }

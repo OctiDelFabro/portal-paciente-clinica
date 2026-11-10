@@ -226,3 +226,34 @@ func TestUnknownDoctorIsReported(t *testing.T) {
 		t.Fatalf("want ErrUnknownDoctor, got %v", err)
 	}
 }
+
+func (s *memStore) AppointmentsPage(ctx context.Context, patient, doctor string, page int, now time.Time) ([]domain.Appointment, bool, error) {
+	var list []domain.Appointment
+	var err error
+	if doctor != "" {
+		list, err = s.ListByDoctor(ctx, doctor)
+	} else {
+		list, err = s.ListByPatient(ctx, patient)
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].StartAt.Before(list[j].StartAt) })
+	start := (page - 1) * PageSize
+	if start >= len(list) {
+		return []domain.Appointment{}, false, nil
+	}
+	end := min(start+PageSize, len(list))
+	return list[start:end], end < len(list), nil
+}
+
+func (s *memStore) HasRelationship(ctx context.Context, doctor, patient string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.rows {
+		if a.DoctorID == doctor && a.PatientID == patient && a.Status == domain.StatusBooked {
+			return true, nil
+		}
+	}
+	return false, nil
+}

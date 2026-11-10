@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -37,7 +36,7 @@ const maxDeadlockRetries = 3
 type Store struct{ DB *sql.DB }
 
 // Open conecta y aplica el esquema. Los DATETIME se manejan en UTC.
-func Open(ctx context.Context, dsn string) (*Store, error) {
+func Open(ctx context.Context, dsn string, tariffs ...domain.Tariff) (*Store, error) {
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
 		return nil, err
@@ -50,13 +49,37 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 	db.SetMaxOpenConns(20)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	if err := db.PingContext(ctx); err != nil {
+		db.Close()
 		return nil, err
 	}
 	if _, err := db.ExecContext(ctx, schema); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 	if err := migrateEnergy(ctx, db); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("migrate energy columns: %w", err)
+	}
+	var tariff domain.Tariff
+	if len(tariffs) > 0 {
+		tariff = tariffs[0]
+	}
+	// Old versions did not record a base price. Freeze the configured tariff
+	// once on upgrade; the historical value cannot be reconstructed.
+	if _, err := db.ExecContext(ctx, `UPDATE appointments SET base_price_cents=COALESCE(base_price_cents,?), energy_tariff_cents_per_kwh=COALESCE(energy_tariff_cents_per_kwh,?) WHERE base_price_cents IS NULL OR energy_tariff_cents_per_kwh IS NULL`, tariff.BaseCents, tariff.CentsPerKWh); err != nil {
+		db.Close()
+		return nil, err
+	}
+	var reasonLength int
+	if err := db.QueryRowContext(ctx, `SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='appointments' AND COLUMN_NAME='cancel_reason'`).Scan(&reasonLength); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if reasonLength < 200 {
+		if _, err := db.ExecContext(ctx, "ALTER TABLE appointments MODIFY cancel_reason VARCHAR(200) NULL"); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 	return &Store{DB: db}, nil
 }
@@ -92,7 +115,7 @@ func (s *Store) once(ctx context.Context, fn func(app.Tx) error) error {
 	return tx.Commit()
 }
 
-const columns = "id, patient_id, doctor_id, start_at, end_at, status, version, COALESCE(cancel_reason, ''), " + energyColumns
+const columns = "id, patient_id, doctor_id, start_at, end_at, status, version, COALESCE(cancel_reason, ''), " + energyColumns + ", base_price_cents, energy_tariff_cents_per_kwh"
 
 type scanner interface{ Scan(...any) error }
 
@@ -100,11 +123,15 @@ func scan(row scanner) (domain.Appointment, error) {
 	var a domain.Appointment
 	var status string
 	var e energyRow
-	err := row.Scan(&a.ID, &a.PatientID, &a.DoctorID, &a.StartAt, &a.EndAt, &status, &a.Version, &a.CancelReason, &e.kwh, &e.cost, &e.status, &e.version)
+	var base, rate sql.NullInt64
+	err := row.Scan(&a.ID, &a.PatientID, &a.DoctorID, &a.StartAt, &a.EndAt, &status, &a.Version, &a.CancelReason, &e.kwh, &e.cost, &e.status, &e.version, &base, &rate)
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, app.ErrNotFound
 	}
 	a.Status = domain.Status(status)
+	if base.Valid && rate.Valid {
+		a.Tariff = &domain.Tariff{BaseCents: base.Int64, CentsPerKWh: rate.Int64}
+	}
 	if err == nil {
 		a.Energy, err = e.energy()
 	}
@@ -120,22 +147,17 @@ type mysqlTx struct {
 	tx *sql.Tx
 }
 
-// LockResources crea las filas de recurso fuera de la transaccion (evita el
-// deadlock de dos INSERT concurrentes) y luego las bloquea en orden estable.
+// LockResources creates and locks each resource on the transaction's existing
+// connection, in stable order. It never borrows a second pooled connection.
 func (t *mysqlTx) LockResources(ctx context.Context, keys ...string) error {
 	sorted := append([]string(nil), keys...)
 	sort.Strings(sorted)
-	placeholders := strings.TrimSuffix(strings.Repeat("(?),", len(sorted)), ",")
-	args := make([]any, len(sorted))
-	for i, k := range sorted {
-		args[i] = k
-	}
-	if _, err := t.s.DB.ExecContext(ctx, "INSERT IGNORE INTO booking_locks (resource_key) VALUES "+placeholders, args...); err != nil {
-		return err
-	}
 	start := time.Now()
 	defer func() { lockWait.Observe(time.Since(start).Seconds()) }()
 	for _, k := range sorted {
+		if _, err := t.tx.ExecContext(ctx, "INSERT INTO booking_locks (resource_key) VALUES (?) ON DUPLICATE KEY UPDATE resource_key = VALUES(resource_key)", k); err != nil {
+			return err
+		}
 		var got string
 		if err := t.tx.QueryRowContext(ctx, "SELECT resource_key FROM booking_locks WHERE resource_key = ? FOR UPDATE", k).Scan(&got); err != nil {
 			return err
@@ -176,20 +198,17 @@ func (s *Store) ActiveForDoctor(ctx context.Context, doctorID string, from, to t
 	return scanAll(rows, err)
 }
 
-// listLimit bounds "my appointments"; the portal has no pagination yet.
-const listLimit = 100
-
 // ListByPatient returns the most recent appointments of the patient (any status).
 func (s *Store) ListByPatient(ctx context.Context, patientID string) ([]domain.Appointment, error) {
 	rows, err := s.DB.QueryContext(ctx, "SELECT "+columns+` FROM appointments
-		WHERE patient_id = ? ORDER BY start_at DESC, id LIMIT ?`, patientID, listLimit)
+		WHERE patient_id = ? ORDER BY start_at ASC, id`, patientID)
 	return scanAll(rows, err)
 }
 
 // ListByDoctor returns the most recent appointments of the doctor (any status).
 func (s *Store) ListByDoctor(ctx context.Context, doctorID string) ([]domain.Appointment, error) {
 	rows, err := s.DB.QueryContext(ctx, "SELECT "+columns+` FROM appointments
-		WHERE doctor_id = ? ORDER BY start_at DESC, id LIMIT ?`, doctorID, listLimit)
+		WHERE doctor_id = ? ORDER BY start_at ASC, id`, doctorID)
 	return scanAll(rows, err)
 }
 
@@ -199,10 +218,14 @@ func (t *mysqlTx) GetForUpdate(ctx context.Context, id string) (domain.Appointme
 
 func (t *mysqlTx) Insert(ctx context.Context, a domain.Appointment) error {
 	kwh, cost, version := energyArgs(a.Energy)
+	var base, rate any
+	if a.Tariff != nil {
+		base, rate = a.Tariff.BaseCents, a.Tariff.CentsPerKWh
+	}
 	_, err := t.tx.ExecContext(ctx, `INSERT INTO appointments (id, patient_id, doctor_id, start_at, end_at, status, version,
-		energy_kwh, energy_cost_ars, energy_status, energy_algorithm_version)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, a.ID, a.PatientID, a.DoctorID, a.StartAt.UTC(), a.EndAt.UTC(), string(a.Status), a.Version,
-		kwh, cost, energyStatus(a.Energy), version)
+		energy_kwh, energy_cost_ars, energy_status, energy_algorithm_version, base_price_cents, energy_tariff_cents_per_kwh)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, a.ID, a.PatientID, a.DoctorID, a.StartAt.UTC(), a.EndAt.UTC(), string(a.Status), a.Version,
+		kwh, cost, energyStatus(a.Energy), version, base, rate)
 	return err
 }
 
@@ -277,4 +300,30 @@ func (t *mysqlTx) InsertPartnerBooking(ctx context.Context, pb app.PartnerBookin
 	_, err := t.tx.ExecContext(ctx, `INSERT INTO partner_bookings (`+partnerColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		pb.AppointmentID, pb.Consumer, pb.IdempotencyKey, pb.Fingerprint, pb.PriceCents, pb.Currency, pb.BookedAt.UTC())
 	return err
+}
+
+func (s *Store) AppointmentsPage(ctx context.Context, patient, doctor string, page int, now time.Time) ([]domain.Appointment, bool, error) {
+	field, id := "patient_id", patient
+	if doctor != "" {
+		field, id = "doctor_id", doctor
+	}
+	rows, err := s.DB.QueryContext(ctx, "SELECT "+columns+" FROM appointments WHERE "+field+` = ?
+ ORDER BY CASE WHEN status='booked' AND start_at>=? THEN 0 WHEN status='booked' THEN 1 ELSE 2 END,
+ CASE WHEN status='booked' AND start_at>=? THEN start_at END ASC, start_at DESC, id
+ LIMIT ? OFFSET ?`, id, now.UTC(), now.UTC(), app.PageSize+1, (page-1)*app.PageSize)
+	list, err := scanAll(rows, err)
+	if err != nil {
+		return nil, false, err
+	}
+	more := len(list) > app.PageSize
+	if more {
+		list = list[:app.PageSize]
+	}
+	return list, more, nil
+}
+
+func (s *Store) HasRelationship(ctx context.Context, doctor, patient string) (bool, error) {
+	var allowed bool
+	err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM appointments WHERE doctor_id=? AND patient_id=? AND status='booked')`, doctor, patient).Scan(&allowed)
+	return allowed, err
 }

@@ -1,19 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { turnos } from '../../api/endpoints';
-import { ApiError } from '../../api/http';
-import type { Appointment } from '../../api/types';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { turnos } from "../../api/endpoints";
+import { ApiError } from "../../api/http";
+import type { Appointment } from "../../api/types";
 
 const POLL_MS = 15000;
-const SEEN_KEY = 'arroyo-claro.seen';
+const SEEN_KEY = "arroyo-claro.seen";
 
-export type LoadState = { kind: 'loading' } | { kind: 'ready' } | { kind: 'error'; message: string; unavailable: boolean };
+export type LoadState =
+  | { kind: "loading" }
+  | { kind: "ready" }
+  | { kind: "error"; message: string; unavailable: boolean };
 
 /** Fingerprint of what the patient should notice when it changes. */
-const fingerprint = (a: Appointment) => `${a.status}|${a.price?.energy.status ?? '-'}|${a.startAt}`;
+const fingerprint = (a: Appointment) =>
+  `${a.status}|${a.price?.energy.status ?? "-"}|${a.startAt}`;
 
 function readSeen(): Record<string, string> {
   try {
-    return JSON.parse(window.sessionStorage.getItem(SEEN_KEY) ?? '{}') as Record<string, string>;
+    return JSON.parse(
+      window.sessionStorage.getItem(SEEN_KEY) ?? "{}",
+    ) as Record<string, string>;
   } catch {
     return {};
   }
@@ -34,15 +40,33 @@ function writeSeen(seen: Record<string, string>) {
  */
 export function useAppointments() {
   const [items, setItems] = useState<Appointment[]>([]);
-  const [state, setState] = useState<LoadState>({ kind: 'loading' });
+  const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [changed, setChanged] = useState<Set<string>>(new Set());
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [pages, setPages] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const requestId = useRef(0);
   const seen = useRef<Record<string, string>>(readSeen());
 
   const refresh = useCallback(async () => {
+    const ticket = ++requestId.current;
+    setRefreshing(true);
     try {
-      const list = await turnos.list();
-      const ranked = [...list].sort((a, b) => a.startAt.localeCompare(b.startAt));
+      let list: Appointment[] = [];
+      let more = false;
+      for (let page = 1; page <= pages; page++) {
+        const result = await turnos.page(page);
+        list.push(...result.appointments);
+        more = !!result.nextPage;
+        if (!more) break;
+      }
+      if (ticket !== requestId.current) return;
+      setHasMore(more);
+      list = [...new Map(list.map((a) => [a.id, a])).values()];
+      const ranked = [...list].sort((a, b) =>
+        a.startAt.localeCompare(b.startAt),
+      );
       const next = new Set<string>();
       for (const a of ranked) {
         const prev = seen.current[a.id];
@@ -53,12 +77,19 @@ export function useAppointments() {
       setItems(ranked);
       setChanged(next);
       setUpdatedAt(new Date());
-      setState({ kind: 'ready' });
+      setState({ kind: "ready" });
     } catch (err) {
+      if (ticket !== requestId.current) return;
       const e = err instanceof ApiError ? err : null;
-      setState({ kind: 'error', message: e?.message ?? 'No pudimos traer tus turnos.', unavailable: e?.unavailable ?? false });
+      setState({
+        kind: "error",
+        message: e?.message ?? "No pudimos traer tus turnos.",
+        unavailable: e?.unavailable ?? false,
+      });
+    } finally {
+      if (ticket === requestId.current) setRefreshing(false);
     }
-  }, []);
+  }, [pages]);
 
   useEffect(() => {
     void refresh();
@@ -81,5 +112,15 @@ export function useAppointments() {
     [items],
   );
 
-  return { items, state, changed, updatedAt, refresh, acknowledge };
+  return {
+    items,
+    state,
+    changed,
+    updatedAt,
+    refresh,
+    acknowledge,
+    hasMore,
+    refreshing,
+    loadMore: () => setPages((n) => n + 1),
+  };
 }

@@ -101,7 +101,7 @@ func (r *Relay) ensureChannel() error {
 		err = ch.Confirm(false)
 	}
 	if err == nil {
-		err = messaging.DeclareExchanges(ch)
+		err = messaging.DeclareTopology(ch)
 	}
 	if err != nil {
 		_ = conn.Close()

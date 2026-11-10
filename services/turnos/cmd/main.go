@@ -115,6 +115,10 @@ func availabilityQuery(svc *app.Service) (app.AvailabilityQuery, func()) {
 }
 
 func main() {
+	if len(os.Getenv("INTERNAL_API_KEY")) < 32 {
+		slog.Error("INTERNAL_API_KEY must contain at least 32 bytes")
+		os.Exit(1)
+	}
 	obs.NewLogger("turnos")
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -130,10 +134,12 @@ func main() {
 		slog.Error("TURNOS_DB_DSN is required")
 		os.Exit(1)
 	}
+	svc := &app.Service{Directory: directory.New(env("PACIENTES_URL", "http://127.0.0.1:8082"), env("MEDICOS_URL", "http://127.0.0.1:8083"), os.Getenv("INTERNAL_API_KEY")), Now: time.Now, NewID: obs.NewID}
+	energyEnabled := energyConfig(svc)
 	var store *mysqlstore.Store
 	// MySQL puede tardar en aceptar conexiones al iniciar el entorno.
 	for attempt := 1; ; attempt++ {
-		store, err = mysqlstore.Open(ctx, dsn)
+		store, err = mysqlstore.Open(ctx, dsn, svc.Tariff)
 		if err == nil {
 			break
 		}
@@ -149,8 +155,9 @@ func main() {
 	go relay.Run(ctx)
 
 	keys, price, rate := partnerConfig()
-	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: time.Now, NewID: obs.NewID, Price: price}
-	if energyConfig(svc) {
+	svc.Store = store
+	svc.Price = price
+	if energyEnabled {
 		// Retries pending estimates off the request path, 20 per minute at most.
 		go svc.RunEnergyReestimator(ctx, time.Minute, 20)
 	}
@@ -158,6 +165,7 @@ func main() {
 	defer closeCache()
 	mux := http.NewServeMux()
 	httpapi.Register(mux, svc)
+	httpapi.RegisterInternal(mux, svc, os.Getenv("INTERNAL_API_KEY"))
 	httpapi.RegisterAvailability(mux, query)
 	(&httpapi.Partner{UseCases: svc, Keys: keys, Limiter: &apikey.Limiter{Rate: rate}, Price: price, Now: time.Now}).Register(mux)
 	mux.Handle("GET /metrics", obs.MetricsHandler())

@@ -127,7 +127,9 @@ def run():
     doctor = catalog["doctors"][0]
 
     now = datetime.datetime.now(datetime.timezone.utc)
-    start = (now + datetime.timedelta(days=random.randint(60, 3000))).replace(hour=random.randint(8, 18), minute=0, second=0, microsecond=0)
+    start = (now + datetime.timedelta(days=random.randint(60, 3000))).replace(hour=12 if doctor["id"] == "doc-001" else 17, minute=0, second=0, microsecond=0)
+    while start.weekday() > 4:
+        start += datetime.timedelta(days=1)
     booking = {"patientId": "pat-001", "doctorId": doctor["id"], "startAt": start.strftime("%Y-%m-%dT%H:%M:%SZ")}
     key = "contract-" + uuid.uuid4().hex
 

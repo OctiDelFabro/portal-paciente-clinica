@@ -1,0 +1,56 @@
+name: Verify portal
+on:
+  push:
+    branches: [main, 'fix/**', 'feature/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -race ./...
+      - run: go vet ./...
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run test:ui
+        working-directory: frontend
+  integration:
+    # MongoDB 8.0 currently rejects the 7.x kernel on Ubuntu 24.04 runners.
+    # Keep testing the same DB version on Ubuntu 22.04 / kernel 6.8.
+    # https://jira.mongodb.org/browse/SERVER-131779
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: uname -r
+      - run: sudo sysctl -w vm.max_map_count=262144
+      - run: go test -tags integration -p 1 -timeout 15m ./...

@@ -9,7 +9,7 @@ import (
 var (
 	now     = time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
 	patient = Patient{ID: "p-1", Enabled: true}
-	doctor  = Doctor{ID: "d-1", Duration: 30 * time.Minute}
+	doctor  = Doctor{ID: "d-1", Duration: 30 * time.Minute, Schedule: Schedule{Weekdays: []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday, time.Saturday, time.Sunday}, Open: 0, Close: 24 * time.Hour}}
 )
 
 func TestBookRejectsLessThan24Hours(t *testing.T) {
@@ -74,5 +74,19 @@ func TestCancelRules(t *testing.T) {
 	}
 	if _, err := cancelled.Cancel("again", now); !errors.Is(err, ErrAlreadyCancelled) {
 		t.Fatalf("want ErrAlreadyCancelled, got %v", err)
+	}
+}
+
+func TestBookingRejectsOutsideScheduleAndKeepsDurationInsideWindow(t *testing.T) {
+	d := doctor
+	d.Schedule = Schedule{Weekdays: []time.Weekday{time.Monday}, Open: 9 * time.Hour, Close: 13 * time.Hour}
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	for _, start := range []time.Time{time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC), time.Date(2026, 11, 16, 11, 59, 0, 0, time.UTC), time.Date(2026, 11, 16, 15, 45, 0, 0, time.UTC)} {
+		if _, err := Book("test", patient, d, start, now, nil); !errors.Is(err, ErrOutsideSchedule) {
+			t.Fatalf("accepted outside schedule %s: %v", start, err)
+		}
+	}
+	if _, err := Book("test", patient, d, time.Date(2026, 11, 16, 15, 30, 0, 0, time.UTC), now, nil); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -44,7 +44,7 @@ func TestConsumerIsIdempotentAndDeadLettersUnprocessable(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = rc.Terminate(context.Background()) })
 	url, _ := rc.AmqpURL(ctx)
-	svc := &service.Service{Store: repo, Now: time.Now, NewID: obs.NewID}
+	svc := &service.Service{Access: service.AccessFunc(func(context.Context, string, string, string) error { return nil }), Store: repo, Now: time.Now, NewID: obs.NewID}
 	go (&Consumer{URL: url, Service: svc}).Run(ctx)
 
 	conn, err := amqp.Dial(url)
