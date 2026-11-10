@@ -62,7 +62,7 @@ type Client struct {
 func New(url, apiKey string) *Client {
 	return &Client{
 		URL: strings.TrimRight(url, "/"), APIKey: apiKey,
-		HTTP:    &http.Client{Transport: obs.Transport(http.DefaultTransport)},
+		HTTP:    &http.Client{Transport: obs.Transport(http.DefaultTransport), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		Budget:  5 * time.Second,
 		Breaker: NewBreaker(),
 		Jitter:  func() time.Duration { return 50*time.Millisecond + rand.N(200*time.Millisecond) },

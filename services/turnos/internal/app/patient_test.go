@@ -9,11 +9,13 @@ import (
 	"portal-paciente-clinica/services/turnos/internal/domain"
 )
 
-func TestBookForPatientAcceptsPatientsMissingFromTheDirectory(t *testing.T) {
+func TestBookForPatientRejectsPatientsMissingFromTheDirectory(t *testing.T) {
 	svc, store := newService()
-	a, err := svc.BookForPatient(context.Background(), "unknown-7", "d-1", fixedNow.Add(48*time.Hour))
-	if err != nil || a.PatientID != "unknown-7" || len(store.outbox) != 1 {
-		t.Fatalf("authenticated patient rejected: %+v err=%v", a, err)
+	if _, err := svc.BookForPatient(context.Background(), "unknown-7", "d-1", fixedNow.Add(48*time.Hour)); !errors.Is(err, ErrUnknownPatient) {
+		t.Fatalf("want ErrUnknownPatient, got %v", err)
+	}
+	if len(store.outbox) != 0 {
+		t.Fatal("rejected identity created an event")
 	}
 }
 

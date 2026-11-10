@@ -57,7 +57,7 @@ func (f *fakeStore) Timeline(_ context.Context, patientID string) ([]service.Enc
 func (f *fakeStore) Ping(context.Context) error { return f.pingErr }
 
 func newMux(store *fakeStore) *http.ServeMux {
-	svc := &service.Service{Store: store, Now: func() time.Time { return time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC) }, NewID: func() string { return "n-1" }}
+	svc := &service.Service{Access: service.AccessFunc(func(context.Context, string, string, string) error { return nil }), Store: store, Now: func() time.Time { return time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC) }, NewID: func() string { return "n-1" }}
 	mux := http.NewServeMux()
 	(&HTTP{Service: svc}).Register(mux)
 	return mux
@@ -111,7 +111,7 @@ func TestGetMyRecordsReturnsOnlyTheCallersTimeline(t *testing.T) {
 }
 
 func TestGetMyRecordsEmptyTimelineIsAnEmptyList(t *testing.T) {
-	rec := call(newMux(&fakeStore{}), "GET", "/records/me", "", map[string]string{"X-Patient-Id": "pat-404"})
+	rec := call(newMux(&fakeStore{}), "GET", "/records/me", "", map[string]string{"X-Patient-Id": "pat-404", "X-User-Role": "patient"})
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"records":[]`) {
 		t.Fatalf("want empty list, got %d %s", rec.Code, rec.Body)
 	}
@@ -201,7 +201,7 @@ func TestConsumerDecision(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &Consumer{Service: &service.Service{Store: tt.store, Now: time.Now, NewID: func() string { return "x" }}}
+			c := &Consumer{Service: &service.Service{Access: service.AccessFunc(func(context.Context, string, string, string) error { return nil }), Store: tt.store, Now: time.Now, NewID: func() string { return "x" }}}
 			got, _, _ := c.process(context.Background(), []byte(tt.body))
 			if got != tt.want {
 				t.Fatalf("want %v, got %v", tt.want, got)

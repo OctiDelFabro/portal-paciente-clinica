@@ -58,7 +58,7 @@ type portalAppointmentDTO struct {
 func toPortalDTO(uc UseCases, a domain.Appointment) portalAppointmentDTO {
 	out := portalAppointmentDTO{appointmentDTO: toDTO(a)}
 	if a.Energy.Status != domain.EnergyNotApplicable {
-		p := toPriceDTO(uc.PriceOf(a.Energy))
+		p := toPriceDTO(uc.PriceOf(a))
 		out.Price = &p
 	}
 	return out

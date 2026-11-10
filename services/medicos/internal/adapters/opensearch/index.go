@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/text/unicode/norm"
 	"io"
 	"net/http"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"portal-paciente-clinica/internal/platform/obs"
 	"portal-paciente-clinica/services/medicos/internal/app"
@@ -156,7 +158,18 @@ func searchBody(q domain.Query) map[string]any {
 	}
 	boolQ := map[string]any{"filter": filter}
 	if q.Q != "" {
-		boolQ["must"] = []any{map[string]any{"match": map[string]any{"fullName": map[string]any{"query": q.Q, "operator": "and", "fuzziness": "AUTO"}}}}
+		needle := strings.Map(func(r rune) rune {
+			if unicode.Is(unicode.Mn, r) {
+				return -1
+			}
+			return unicode.ToLower(r)
+		}, norm.NFD.String(q.Q))
+		needle = strings.Join(strings.Fields(needle), "-")
+		needle = strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`).Replace(needle)
+		boolQ["must"] = []any{map[string]any{"bool": map[string]any{"minimum_should_match": 1, "should": []any{
+			map[string]any{"match": map[string]any{"fullName": map[string]any{"query": q.Q, "operator": "and", "fuzziness": "AUTO"}}},
+			map[string]any{"wildcard": map[string]any{"specialties": map[string]any{"value": "*" + needle + "*", "case_insensitive": true}}},
+		}}}}
 	}
 	byName := []any{map[string]any{"fullName.keyword": "asc"}, map[string]any{"doctorId": "asc"}}
 	var sortBy []any

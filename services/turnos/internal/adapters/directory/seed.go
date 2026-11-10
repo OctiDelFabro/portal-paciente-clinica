@@ -1,6 +1,5 @@
-// Package directory resuelve medicos y pacientes con datos semilla mientras
-// los servicios Medicos y Pacientes no estan operativos (limitacion de la
-// Entrega 2, documentada en docs/ENTREGA-2.md).
+// Package directory provides the production HTTP directory and deterministic
+// test fixtures. Only agenda defaults remain seeded in production.
 package directory
 
 import (
@@ -17,7 +16,7 @@ type Seed struct{}
 var workdays = []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday}
 
 // doctors: appointment duration and weekly schedule (clinic time) that
-// availability uses (ADR-007). Booking keeps validating only lead time and overlaps.
+// availability and authoritative booking both enforce (ADR-007).
 // Specialty (as in Medicos seed) selects the consultation energy profile (ADR-009).
 var doctors = map[string]domain.Doctor{
 	"doc-001": {ID: "doc-001", Duration: 30 * time.Minute, Specialty: "cardiologia", Schedule: domain.Schedule{Weekdays: workdays, Open: 9 * time.Hour, Close: 13 * time.Hour}},

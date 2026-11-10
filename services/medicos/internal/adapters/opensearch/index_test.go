@@ -220,3 +220,13 @@ func TestRebuildFailsOnBulkErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestFreeTextSearchIncludesNormalizedSpecialties(t *testing.T) {
+	body, _ := json.Marshal(searchBody(domain.Query{Q: "Pediatría", Page: 1, Size: 10}))
+	if !strings.Contains(string(body), `"specialties":{"case_insensitive":true,"value":"*pediatria*"}`) {
+		t.Fatalf("specialty missing: %s", body)
+	}
+	if !strings.Contains(string(body), `"minimum_should_match":1`) {
+		t.Fatalf("name and specialty were not alternatives: %s", body)
+	}
+}

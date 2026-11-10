@@ -59,7 +59,7 @@ func newAuthenticator(secret string) (*authenticator, error) {
 }
 
 // knownRoles are the portal roles Pacientes issues; anything else is rejected.
-var knownRoles = map[string]bool{"patient": true, "doctor": true}
+var knownRoles = map[string]bool{"patient": true, "doctor": true, "admin": true, "reception": true}
 
 type portalClaims struct {
 	Role string `json:"role"`

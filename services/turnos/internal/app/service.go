@@ -18,13 +18,13 @@ import (
 )
 
 var (
-	ErrNotFound       = errors.New("not found")
-	ErrUnknownDoctor  = errors.New("unknown doctor")
-	ErrUnknownPatient = errors.New("unknown patient")
+	ErrNotFound             = errors.New("not found")
+	ErrUnknownDoctor        = errors.New("unknown doctor")
+	ErrUnknownPatient       = errors.New("unknown patient")
+	ErrDirectoryUnavailable = errors.New("directory unavailable")
 )
 
-// Directory obtiene datos de Medicos y Pacientes. En la Entrega 2 lo resuelve
-// un adaptador con datos semilla; luego sera un cliente HTTP de esos servicios.
+// Directory reads profiles from Medicos and verification from Pacientes.
 type Directory interface {
 	Doctor(ctx context.Context, id string) (domain.Doctor, error)
 	Patient(ctx context.Context, id string) (domain.Patient, error)
@@ -54,6 +54,8 @@ type Tx interface {
 }
 
 type Store interface {
+	HasRelationship(context.Context, string, string) (bool, error)
+	AppointmentsPage(context.Context, string, string, int, time.Time) ([]domain.Appointment, bool, error)
 	InTx(ctx context.Context, fn func(Tx) error) error
 	Get(ctx context.Context, id string) (domain.Appointment, error)
 	PartnerBookingByKey(ctx context.Context, consumer, key string) (PartnerBooking, error)
@@ -103,17 +105,13 @@ func (s *Service) Book(ctx context.Context, patientID, doctorID string, startAt 
 // book es la reserva comun. Con partner, la clave de idempotencia se bloquea y
 // se vuelve a comprobar dentro de la transaccion: si otra solicitud con la
 // misma clave gano, se devuelve su turno (replayed) en lugar de crear otro.
-// authenticated marks a patient identified by the gateway: if the directory
-// does not know them they are accepted as enabled.
+// Authentication never substitutes for verification in the patient directory.
 func (s *Service) book(ctx context.Context, patientID, doctorID string, startAt time.Time, partner *PartnerBooking, authenticated bool) (domain.Appointment, bool, error) {
 	doctor, err := s.Directory.Doctor(ctx, doctorID)
 	if err != nil {
 		return domain.Appointment{}, false, err
 	}
 	patient, err := s.Directory.Patient(ctx, patientID)
-	if authenticated && errors.Is(err, ErrUnknownPatient) {
-		patient, err = domain.Patient{ID: patientID, Enabled: true}, nil
-	}
 	if err != nil {
 		return domain.Appointment{}, false, err
 	}
@@ -151,6 +149,8 @@ func (s *Service) book(ctx context.Context, patientID, doctorID string, startAt 
 		if err != nil {
 			return err
 		}
+		tariff := s.Tariff
+		booked.Tariff = &tariff
 		booked.Energy = domain.Energy{Status: domain.EnergyPending}
 		if partner != nil {
 			booked.Energy.Status = domain.EnergyNotApplicable
@@ -221,6 +221,10 @@ func RejectReason(err error) string {
 	switch {
 	case errors.Is(err, domain.ErrLeadTime):
 		return "lead_time"
+	case errors.Is(err, domain.ErrOutsideSchedule):
+		return "outside_schedule"
+	case errors.Is(err, ErrDirectoryUnavailable):
+		return "directory_unavailable"
 	case errors.Is(err, domain.ErrOverlap):
 		return "overlap"
 	case errors.Is(err, domain.ErrPatientNotActive):

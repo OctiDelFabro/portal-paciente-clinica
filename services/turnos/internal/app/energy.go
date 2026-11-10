@@ -54,7 +54,13 @@ func (s *Service) Quote(ctx context.Context, doctorID string, startAt time.Time)
 }
 
 // PriceOf is the price breakdown of an appointment's stored energy.
-func (s *Service) PriceOf(e domain.Energy) domain.Price { return s.Tariff.Price(e) }
+func (s *Service) PriceOf(a domain.Appointment) domain.Price {
+	tariff := s.Tariff
+	if a.Tariff != nil {
+		tariff = *a.Tariff
+	}
+	return tariff.Price(a.Energy)
+}
 
 func (s *Service) inlineBudget() time.Duration {
 	if s.EnergyBudget > 0 {
@@ -66,6 +72,9 @@ func (s *Service) inlineBudget() time.Duration {
 // estimate never fails: without an estimator or on error it returns pending.
 // The adapter already logged provider.unavailable with the outcome.
 func (s *Service) estimate(ctx context.Context, doctor domain.Doctor, budget time.Duration) domain.Energy {
+	return s.estimateAt(ctx, doctor, budget, s.Tariff)
+}
+func (s *Service) estimateAt(ctx context.Context, doctor domain.Doctor, budget time.Duration, tariff domain.Tariff) domain.Energy {
 	if s.Energy == nil {
 		return domain.Energy{Status: domain.EnergyPending}
 	}
@@ -75,13 +84,17 @@ func (s *Service) estimate(ctx context.Context, doctor domain.Doctor, budget tim
 	if err != nil {
 		return domain.Energy{Status: domain.EnergyPending}
 	}
-	return s.Tariff.Estimated(est.MicroKWh, est.AlgorithmVersion)
+	return tariff.Estimated(est.MicroKWh, est.AlgorithmVersion)
 }
 
 // priceBooking runs after the booking committed. If the estimate or its write
 // fails the appointment stays pending and the re-estimator completes it.
 func (s *Service) priceBooking(ctx context.Context, a domain.Appointment, doctor domain.Doctor) domain.Appointment {
-	e := s.estimate(ctx, doctor, s.inlineBudget())
+	tariff := s.Tariff
+	if a.Tariff != nil {
+		tariff = *a.Tariff
+	}
+	e := s.estimateAt(ctx, doctor, s.inlineBudget(), tariff)
 	if e.Status != domain.EnergyEstimated {
 		return a
 	}
@@ -114,7 +127,11 @@ func (s *Service) ReestimatePending(ctx context.Context, limit int) int {
 			_ = s.Store.SaveEnergy(ctx, a.ID, domain.Energy{Status: domain.EnergyPending}, now)
 			continue
 		}
-		e := s.estimate(ctx, doctor, ReestimateBudget)
+		tariff := s.Tariff
+		if a.Tariff != nil {
+			tariff = *a.Tariff
+		}
+		e := s.estimateAt(ctx, doctor, ReestimateBudget, tariff)
 		if err := s.Store.SaveEnergy(ctx, a.ID, e, now); err != nil {
 			slog.WarnContext(ctx, "energy estimate not saved", "event", "energy.save_failed", "appointment_id", a.ID, "error", err.Error())
 			break

@@ -97,7 +97,7 @@ func (f *fakeStore) Ping(context.Context) error { return nil }
 var fixedNow = time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)
 
 func newService(store *fakeStore) *service.Service {
-	return &service.Service{Store: store, Now: func() time.Time { return fixedNow }, NewID: func() string { return "note-1" }}
+	return &service.Service{Access: service.AccessFunc(func(context.Context, string, string, string) error { return nil }), Store: store, Now: func() time.Time { return fixedNow }, NewID: func() string { return "note-1" }}
 }
 
 func TestHandleEventMapsBookingToScheduledEncounter(t *testing.T) {

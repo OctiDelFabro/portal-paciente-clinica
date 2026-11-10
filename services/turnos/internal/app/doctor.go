@@ -34,3 +34,7 @@ func (s *Service) CancelForDoctor(ctx context.Context, doctorID, id, reason stri
 	}
 	return s.Cancel(ctx, id, reason)
 }
+
+func (s *Service) HasRelationship(ctx context.Context, doctor, patient string) (bool, error) {
+	return s.Store.HasRelationship(ctx, doctor, patient)
+}

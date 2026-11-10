@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -105,5 +106,21 @@ func TestRateLimitDoesNotApplyOutsideAPI(t *testing.T) {
 		if rec := do(internal, "GET", "/metrics", ""); rec.Code != 200 {
 			t.Fatalf("metrics #%d: %d", i, rec.Code)
 		}
+	}
+}
+
+func TestLimiterBoundsActiveKeysAndRecoversAfterIdle(t *testing.T) {
+	l := newTokenBucket(10, 20)
+	now := time.Unix(1000, 0)
+	for i := 0; i < maxBuckets; i++ {
+		if ok, _ := l.Allow(strconv.Itoa(i), now); !ok {
+			t.Fatal("premature limit")
+		}
+	}
+	if ok, _ := l.Allow("overflow", now); ok || len(l.buckets) != maxBuckets {
+		t.Fatalf("limit not applied: %d", len(l.buckets))
+	}
+	if ok, _ := l.Allow("overflow", now.Add(3*time.Second)); !ok {
+		t.Fatal("idle buckets did not recover")
 	}
 }

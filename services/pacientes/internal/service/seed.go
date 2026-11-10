@@ -16,6 +16,8 @@ import (
 // pat-002 is registered but not enabled by reception (RF-13); pat-003 is a
 // minor without email or login whose responsible adult is pat-001 (RF-12).
 var demoPatients = []repository.Patient{
+	{ID: "admin-001", Email: "admin@example.test", FullName: "Administración Demo", Enabled: true, Role: "admin"},
+	{ID: "rec-001", Email: "recepcion@example.test", FullName: "Recepción Demo", Enabled: true, Role: "reception"},
 	{ID: "pat-001", Email: "paciente1@example.test", FullName: "Lucia Fernandez", DocumentNumber: "30111001", BirthDate: date(1985, 6, 15), Enabled: true, Role: "patient"},
 	{ID: "pat-002", Email: "paciente2@example.test", FullName: "Martin Perez", DocumentNumber: "30111002", BirthDate: date(1990, 11, 2), Enabled: false, Role: "patient"},
 	{ID: "pat-003", FullName: "Tomas Fernandez", DocumentNumber: "50111003", BirthDate: date(2015, 3, 10), Enabled: true, ResponsibleID: "pat-001", Role: "patient"},
@@ -45,7 +47,9 @@ func (s *Service) SeedDemo(ctx context.Context, password string) error {
 			return err
 		}
 		if p.Role != demo.Role && demo.Role != "" {
-			_ = s.Store.SetRole(ctx, p.ID, demo.Role)
+			if err := s.Store.SetRole(ctx, p.ID, demo.Role); err != nil {
+				return err
+			}
 			p.Role = demo.Role
 		}
 		if password == "" || p.Email == "" {

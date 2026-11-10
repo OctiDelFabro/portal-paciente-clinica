@@ -4,6 +4,8 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,8 +31,9 @@ var authAttempts = promauto.NewCounterVec(prometheus.CounterOpts{
 }, []string{"operation", "outcome"})
 
 type HTTP struct {
-	Service *service.Service
-	Health  func() error
+	Service     *service.Service
+	Health      func() error
+	InternalKey string
 }
 
 func (h *HTTP) Register(mux *http.ServeMux) {
@@ -45,6 +48,8 @@ func (h *HTTP) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/login", h.login)
 	mux.HandleFunc("GET /me", h.me)
 	mux.HandleFunc("GET /patients/{id}/contact", h.contact)
+	mux.HandleFunc("GET /internal/patients/{id}", h.internalProfile)
+	h.registerManagement(mux)
 }
 
 func (h *HTTP) register(w http.ResponseWriter, r *http.Request) {
@@ -222,4 +227,21 @@ func sendJSON(w http.ResponseWriter, status int, value any) {
 
 func sendError(w http.ResponseWriter, status int, code, message string) {
 	sendJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": message}})
+}
+
+func (h *HTTP) internalProfile(w http.ResponseWriter, r *http.Request) {
+	expected, got := sha256.Sum256([]byte(h.InternalKey)), sha256.Sum256([]byte(r.Header.Get("X-Service-Key")))
+	if len(h.InternalKey) < 32 || subtle.ConstantTimeCompare(expected[:], got[:]) != 1 {
+		sendError(w, 401, "UNAUTHORIZED", "Service authentication required.")
+		return
+	}
+	p, ok := h.find(w, r, r.PathValue("id"))
+	if !ok {
+		return
+	}
+	birth := ""
+	if !p.BirthDate.IsZero() {
+		birth = p.BirthDate.Format(time.DateOnly)
+	}
+	sendJSON(w, 200, map[string]any{"patientId": p.ID, "fullName": p.FullName, "email": emailPtr(p.Email), "enabled": p.Enabled, "role": p.Role, "birthDate": birth, "responsiblePatientId": p.ResponsibleID})
 }

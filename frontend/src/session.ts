@@ -24,7 +24,8 @@ export function decodeSession(token: string, fullName: string): Session | null {
       exp?: number;
     };
     if (!json.sub || !json.exp) return null;
-    const role: Role = json.role === 'doctor' ? 'doctor' : 'patient';
+    if (!['patient', 'doctor', 'admin', 'reception'].includes(json.role ?? '')) return null;
+    const role = json.role as Role;
     return { token, subject: json.sub, role, fullName, expiresAt: json.exp * 1000 };
   } catch {
     return null;
@@ -36,7 +37,7 @@ export function loadSession(): Session | null {
     const raw = window.sessionStorage.getItem(KEY);
     if (!raw) return null;
     const session = JSON.parse(raw) as Session;
-    return session.expiresAt > Date.now() ? session : null;
+    return session.expiresAt > Date.now() && ['patient', 'doctor', 'admin', 'reception'].includes(session.role) ? session : null;
   } catch {
     return null;
   }

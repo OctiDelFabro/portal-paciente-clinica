@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS appointments (
   end_at DATETIME(3) NOT NULL,
   status VARCHAR(16) NOT NULL,
   version INT NOT NULL,
-  cancel_reason VARCHAR(32) NULL,
+  cancel_reason VARCHAR(200) NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   INDEX idx_doctor_time (doctor_id, status, start_at),

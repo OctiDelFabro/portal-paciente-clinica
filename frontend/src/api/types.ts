@@ -1,11 +1,11 @@
 // Contracts of the services behind the gateway, as published in each
 // service README. Field names match the JSON exactly.
 
-export type Role = 'patient' | 'doctor';
+export type Role = "patient" | "doctor" | "admin" | "reception";
 
 export interface LoginResponse {
   accessToken: string;
-  tokenType: 'Bearer';
+  tokenType: "Bearer";
   expiresIn: number;
   patient?: { patientId: string; fullName: string; email: string };
   user?: { userId: string; fullName: string; email: string; role: Role };
@@ -50,7 +50,7 @@ export interface Specialty {
   name: string;
 }
 
-export type SortOrder = 'name' | 'nextAvailable';
+export type SortOrder = "name" | "nextAvailable";
 
 export interface SearchQuery {
   q: string;
@@ -77,7 +77,7 @@ export interface Availability {
 export type Money = string | number;
 
 export interface EnergyCost {
-  status: 'estimated' | 'pending';
+  status: "estimated" | "pending";
   kWh?: Money | null;
   costArs?: Money | null;
   algorithmVersion?: string | null;
@@ -94,7 +94,7 @@ export interface Quote extends Price {
   startAt: string;
 }
 
-export type AppointmentStatus = 'booked' | 'cancelled' | string;
+export type AppointmentStatus = "booked" | "cancelled" | string;
 
 export interface Appointment {
   id: string;
@@ -109,7 +109,9 @@ export interface Appointment {
 }
 
 export interface AppointmentList {
-  items: Appointment[];
+  appointments: Appointment[];
+  page?: number;
+  nextPage?: number;
 }
 
 export interface ClinicalNote {
@@ -124,7 +126,7 @@ export interface ClinicalRecord {
   patientId: string;
   doctorId: string;
   startAt: string;
-  status: 'scheduled' | 'cancelled';
+  status: "scheduled" | "cancelled";
   cancelReason?: string;
   notes: ClinicalNote[];
 }

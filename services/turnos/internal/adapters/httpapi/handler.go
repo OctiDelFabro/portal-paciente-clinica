@@ -5,9 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -33,6 +37,7 @@ var (
 )
 
 type UseCases interface {
+	ListAppointments(context.Context, string, string, int) ([]domain.Appointment, bool, error)
 	Book(ctx context.Context, patientID, doctorID string, startAt time.Time) (domain.Appointment, error)
 	Cancel(ctx context.Context, id, reason string) (domain.Appointment, error)
 	Get(ctx context.Context, id string) (domain.Appointment, error)
@@ -45,7 +50,7 @@ type UseCases interface {
 	CancelForDoctor(ctx context.Context, doctorID, id, reason string) (domain.Appointment, error)
 	// Quote and PriceOf price portal consultations (ADR-009).
 	Quote(ctx context.Context, doctorID string, startAt time.Time) (app.Quote, error)
-	PriceOf(e domain.Energy) domain.Price
+	PriceOf(a domain.Appointment) domain.Price
 }
 
 // PatientHeader carries the patient authenticated by the gateway (validated
@@ -132,13 +137,17 @@ func Register(mux *http.ServeMux, uc UseCases) {
 			return
 		}
 		role := r.Header.Get("X-User-Role")
-		var list []domain.Appointment
-		var err error
-		if role == "doctor" {
-			list, err = uc.ListForDoctor(r.Context(), caller)
-		} else {
-			list, err = uc.ListForPatient(r.Context(), caller)
+		page := 1
+		if raw := r.URL.Query().Get("page"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 1 || n > 100000 {
+				sendError(w, 400, "INVALID_PAGE", "page debe ser un entero entre 1 y 100000.")
+				return
+			}
+			page = n
 		}
+		list, more, err := uc.ListAppointments(r.Context(), role, caller, page)
+
 		if err != nil {
 			mapError(w, err)
 			return
@@ -147,7 +156,11 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		for _, a := range list {
 			out = append(out, toPortalDTO(uc, a))
 		}
-		sendJSON(w, 200, map[string]any{"appointments": out})
+		next := 0
+		if more {
+			next = page + 1
+		}
+		sendJSON(w, 200, map[string]any{"appointments": out, "page": page, "nextPage": next})
 	})
 	mux.HandleFunc("GET /appointments/{id}", func(w http.ResponseWriter, r *http.Request) {
 		caller, ok := authPatient(w, r)
@@ -187,8 +200,8 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		if r.ContentLength != 0 && !decode(w, r, &in) {
 			return
 		}
-		if len(in.Reason) > 32 {
-			sendError(w, 400, "INVALID_REQUEST", "reason admite hasta 32 caracteres.")
+		if utf8.RuneCountInString(in.Reason) > 200 || strings.ContainsAny(in.Reason, "\r\n\x00") {
+			sendError(w, 400, "INVALID_REQUEST", "reason admite hasta 200 caracteres sin saltos de línea.")
 			return
 		}
 		role := r.Header.Get("X-User-Role")
@@ -215,11 +228,19 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 		sendError(w, 400, "INVALID_JSON", "JSON invalido o con campos desconocidos.")
 		return false
 	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		sendError(w, 400, "INVALID_JSON", "Debe enviarse un único objeto JSON.")
+		return false
+	}
 	return true
 }
 
 func mapError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, domain.ErrOutsideSchedule):
+		sendError(w, 422, "OUTSIDE_SCHEDULE", "El horario está fuera de la agenda del médico.")
+	case errors.Is(err, domain.ErrInvalidReason):
+		sendError(w, 422, "INVALID_REASON", "El motivo admite hasta 200 caracteres sin saltos de línea.")
 	case errors.Is(err, domain.ErrLeadTime):
 		sendError(w, 422, "LEAD_TIME_TOO_SHORT", "Se requieren al menos 24 horas de anticipacion.")
 	case errors.Is(err, domain.ErrOverlap):
@@ -230,6 +251,8 @@ func mapError(w http.ResponseWriter, err error) {
 		sendError(w, 409, "ALREADY_CANCELLED", "El turno ya estaba cancelado.")
 	case errors.Is(err, domain.ErrPatientNotActive):
 		sendError(w, 403, "PATIENT_NOT_ENABLED", "El paciente aun no fue habilitado por recepcion.")
+	case errors.Is(err, app.ErrDirectoryUnavailable):
+		sendError(w, 503, "DIRECTORY_UNAVAILABLE", "No pudimos verificar los datos del paciente o del médico. Reintentá más tarde.")
 	case errors.Is(err, app.ErrUnknownDoctor):
 		sendError(w, 404, "UNKNOWN_DOCTOR", "Medico inexistente.")
 	case errors.Is(err, app.ErrUnknownPatient):

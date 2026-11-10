@@ -43,7 +43,7 @@ func startStore(t *testing.T) *Store {
 func TestConcurrentOverlappingBookingsKeepOne(t *testing.T) {
 	store := startStore(t)
 	now := time.Now().UTC()
-	base := now.Add(72 * time.Hour).Truncate(time.Hour)
+	base := nextWorkday(now).Add(9 * time.Hour)
 	var seq atomic.Int64
 	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
 		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-8000-%012d", seq.Add(1)) }}
@@ -76,7 +76,7 @@ func TestCancelPersistsVersionAndEvent(t *testing.T) {
 	now := time.Now().UTC()
 	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
 		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-9000-%012d", idSeq.Add(1)) }}
-	a, err := svc.Book(context.Background(), "pat-001", "doc-002", now.Add(48*time.Hour))
+	a, err := svc.Book(context.Background(), "pat-001", "doc-002", nextWorkday(now).Add(14*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestCancelPersistsVersionAndEvent(t *testing.T) {
 func TestConcurrentPartnerRequestsWithSameKeyCreateOne(t *testing.T) {
 	store := startStore(t)
 	now := time.Now().UTC()
-	start := now.Add(96 * time.Hour).Truncate(time.Hour)
+	start := nextWorkday(now).Add(14 * time.Hour)
 	var seq atomic.Int64
 	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
 		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-8000-%012d", seq.Add(1)) },
@@ -161,7 +161,7 @@ func TestAvailabilitySlotIsBookableAndThenListed(t *testing.T) {
 	if err != nil || len(before.Slots) == 0 {
 		t.Fatalf("no availability: %+v %v", before, err)
 	}
-	a, err := svc.BookForPatient(ctx, "jwt-patient-1", "doc-001", before.Slots[0].StartAt)
+	a, err := svc.BookForPatient(ctx, "pat-001", "doc-001", before.Slots[0].StartAt)
 	if err != nil {
 		t.Fatalf("free slot rejected: %v", err)
 	}
@@ -169,11 +169,11 @@ func TestAvailabilitySlotIsBookableAndThenListed(t *testing.T) {
 	if err != nil || len(after.Slots) != len(before.Slots)-1 || after.Slots[0].StartAt.Equal(a.StartAt) {
 		t.Fatalf("booked slot still free: before=%d after=%+v", len(before.Slots), after)
 	}
-	list, err := svc.ListForPatient(ctx, "jwt-patient-1")
+	list, err := svc.ListForPatient(ctx, "pat-001")
 	if err != nil || len(list) != 1 || list[0].ID != a.ID {
 		t.Fatalf("list = %+v %v", list, err)
 	}
-	if _, err := svc.GetForPatient(ctx, "pat-001", a.ID); err != app.ErrNotFound {
+	if _, err := svc.GetForPatient(ctx, "pat-003", a.ID); err != app.ErrNotFound {
 		t.Fatalf("other patient read: %v", err)
 	}
 }

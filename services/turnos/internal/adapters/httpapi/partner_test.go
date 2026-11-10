@@ -154,6 +154,8 @@ func TestPartnerBookKeepsBusinessErrorCodes(t *testing.T) {
 		errCode string
 	}{
 		{domain.ErrLeadTime, 422, "LEAD_TIME_TOO_SHORT"},
+		{domain.ErrOutsideSchedule, 422, "OUTSIDE_SCHEDULE"},
+		{app.ErrDirectoryUnavailable, 503, "DIRECTORY_UNAVAILABLE"},
 		{domain.ErrOverlap, 409, "SLOT_UNAVAILABLE"},
 		{domain.ErrPatientNotActive, 403, "PATIENT_NOT_ENABLED"},
 		{app.ErrUnknownDoctor, 404, "UNKNOWN_DOCTOR"},

@@ -114,7 +114,8 @@ func (r *Repo) Create(ctx context.Context, p Patient) error {
 
 const columns = "id, email, password_hash, full_name, document_number, birth_date, enabled, responsible_id, created_at, role"
 
-func scan(row *sql.Row) (Patient, error) {
+func scan(row *sql.Row) (Patient, error) { return scanPatient(row) }
+func scanPatient(row interface{ Scan(...any) error }) (Patient, error) {
 	var p Patient
 	var email, hash, doc, responsible, role sql.NullString
 	var birth sql.NullTime

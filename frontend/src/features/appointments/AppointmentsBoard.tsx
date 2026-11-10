@@ -12,7 +12,7 @@ import { useAppointments } from './useAppointments';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function AppointmentsBoard() {
-  const { items, state, changed, updatedAt, refresh, acknowledge } = useAppointments();
+  const { items, state, changed, updatedAt, refresh, acknowledge, hasMore, refreshing, loadMore } = useAppointments();
   const doctors = useDoctors(items.map((a) => a.doctorId));
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [flash, setFlash] = useState<{ tone: 'alert' | 'error'; title: string; text: string } | null>(null);
@@ -108,6 +108,7 @@ export function AppointmentsBoard() {
         </table>
       </div>
 
+      {hasMore ? <button className="btn btn--secondary" disabled={refreshing} onClick={loadMore}>Cargar más turnos</button> : null}
       {past.length > 0 ? (
         <details className="past">
           <summary>

@@ -61,7 +61,7 @@ func ExtractContext(ctx context.Context, headers amqp.Table) context.Context {
 }
 
 // DeclareExchanges crea el exchange topic durable de eventos y el de mensajes fallidos.
-func DeclareExchanges(ch *amqp.Channel) error {
+func DeclareExchanges(ch TopologyChannel) error {
 	if err := ch.ExchangeDeclare(Exchange, "topic", true, false, false, false, nil); err != nil {
 		return fmt.Errorf("declare %s: %w", Exchange, err)
 	}

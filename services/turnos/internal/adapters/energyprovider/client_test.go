@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ var consumption = domain.ConsultationConsumption(domain.Doctor{Duration: 30 * ti
 
 // provider replies with the scripted statuses in order (the last one repeats).
 type provider struct {
+	mu       sync.Mutex
 	statuses []int
 	calls    atomic.Int32
 	delay    time.Duration
@@ -36,7 +38,9 @@ type provider struct {
 
 func (p *provider) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	n := int(p.calls.Add(1)) - 1
+	p.mu.Lock()
 	p.headers = append(p.headers, r.Header.Clone())
+	p.mu.Unlock()
 	if p.delay > 0 {
 		select {
 		case <-time.After(p.delay):
@@ -223,5 +227,22 @@ func TestFailuresLogProviderUnavailableWithoutTheKey(t *testing.T) {
 	}
 	if strings.Contains(out, "secret-key-123") {
 		t.Fatalf("API key leaked to logs: %s", out)
+	}
+}
+
+func TestProviderNeverRedirectsCredentialToAnotherHost(t *testing.T) {
+	var called atomic.Int32
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, okBody)
+	}))
+	defer destination.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, strings.Replace(destination.URL, "127.0.0.1", "localhost", 1), 307)
+	}))
+	defer origin.Close()
+	if _, err := newTestClient(origin.URL).Estimate(context.Background(), consumption); err == nil || called.Load() != 0 {
+		t.Fatalf("redirect followed: err=%v calls=%d", err, called.Load())
 	}
 }

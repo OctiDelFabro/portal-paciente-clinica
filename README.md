@@ -1,88 +1,80 @@
-# portal-paciente-clinica
-Portal paciente para una única clínica, dominio aprobado para Arquitectura de Software 2026.
-Entrega 2: reserva de turnos de punta a punta (Turnos → RabbitMQ → Notificaciones → correo) con logs correlacionados y trazas distribuidas. Repositorio público [OctiDelFabro/portal-paciente-clinica](https://github.com/OctiDelFabro/portal-paciente-clinica).
+# Portal Paciente Clínica
 
-## Integrantes
+Proyecto de Arquitectura de Software 2026 de Octavio Del Fabro, Andres Romanutti y Matias Yelicich. React/TypeScript, gateway y cinco servicios Go: Turnos, Pacientes, Médicos, Historia Clínica y Notificaciones.
 
-- Octavio Del Fabro
-- Andres Romanutti
-- Matias Yelicich
+## Qué funciona
 
-Comisión: pendiente de completar.
+- Registro, login y JWT de paciente, médico, recepción y administración. Las cuentas nuevas quedan pendientes de verificación; autenticarse no las habilita para reservar o consultar historias clínicas.
+- Búsqueda de profesionales por nombre o especialidad, filtros, detalle y disponibilidad.
+- Reserva y cancelación propias con 24 h de anticipación, agenda de atención en ART (UTC-03:00) y prevención de superposiciones por médico y paciente.
+- Listados paginados, próximos turnos activos primero; la interfaz permite cargar más resultados.
+- Agenda profesional, notas del médico asignado y lectura de historia clínica con un turno vigente o pasado no cancelado. El paciente habilitado consulta su propia historia. Existe un endpoint para el responsable verificado de un menor; recepción no accede al contenido clínico.
+- Recepción y administración pueden listar/verificar pacientes y registrar el vínculo con un adulto habilitado. Administración edita perfiles y reconstruye la búsqueda.
+- Eventos durables de reserva/cancelación, correo a contactos actuales de Pacientes y a responsables válidos, avisos internos persistidos, reintentos y DLQ.
+- Estimación energética con proveedor degradable, reestimación y tarifa base/por kWh conservadas desde la reserva.
+- API de socios con clave por consumidor, aislamiento, idempotencia y precio persistido.
 
-## Flujo principal y alcance
-Un paciente se registra y recepción verifica sus datos antes de habilitarlo. Busca médicos/especialidades y reserva un turno disponible con al menos 24 h de anticipación. Se evitan superposiciones del médico y del paciente. La reserva genera aviso interno y correo; el recordatorio se prevé 24 h antes.
+El alcance todavía pendiente se detalla en [CORRECCIONES-REVISION.md](docs/CORRECCIONES-REVISION.md): reprogramación atómica, edición/bloqueo de agenda, gestión completa de turnos de menores y recepción, recordatorios y lectura de avisos internos. No se presentan como funciones terminadas.
 
-Paciente y recepción cancelan/reprograman con al menos 24 h respecto del turno original; el nuevo horario también respeta esa anticipación. Una reprogramación fallida mantiene el turno original y lo informa. Los responsables verificados gestionan turnos e historia clínica de menores.
-El médico define agenda y duración; los cambios de duración preservan las reservas existentes. Un bloqueo puede cancelar turnos incluso dentro de las últimas 24 h y genera avisos. Recepción no accede al contenido clínico; un turno cancelado por sí solo no habilita el acceso médico.
+## Ejecutar localmente
 
-## Arquitectura y documentación
-Frontend React/TypeScript; gateway y cinco servicios Go. Turnos, Pacientes, Médicos y Notificaciones usan MySQL en el diseño; Historia clínica usa MongoDB. RabbitMQ comunica eventos, OpenSearch proyecta perfiles y Redis se prevé para lectura a justificar.
-- [Alcance y criterios](docs/SPEC.md).
-- [Arquitectura](docs/ARCHITECTURE.md) y [diagramas](docs/diagrams/README.md).
-- ADRs: [D1 límites](docs/adr/ADR-001-Limites-de-servicios.md), [D2 arquitectura interna](docs/adr/ADR-002-Arquitectura-interna.md), [D3 persistencia](docs/adr/ADR-003-Persistencia.md), [D5 comunicación](docs/adr/ADR-005-Comunicacion.md), [D6 búsqueda](docs/adr/ADR-006-Busqueda.md), [D7 caché](docs/adr/ADR-007-Cache.md), [D8 contrato propio](docs/adr/ADR-008-Contrato-propio.md), [D9 proveedor](docs/adr/ADR-009-Consumo-proveedor.md), [D10 resiliencia](docs/adr/ADR-010-Resiliencia.md), [D11 observabilidad](docs/adr/ADR-011-Observabilidad.md), [D12 balanceo](docs/adr/ADR-012-Balanceo-de-carga.md), [D13 capacidad y costos](docs/adr/ADR-013-Capacidad-y-costos.md).
-- [Contrato, errores y ejemplos](docs/contracts/README.md).
-- Estado por entrega: [Entrega 2](docs/ENTREGA-2.md) · [Entrega 1](docs/ENTREGA-1.md).
-- [Validación](docs/VERIFICACION.md).
+Requisitos: Docker con Compose; Node.js 22 y npm para React. Para Go sin contenedores: Go 1.26 o posterior.
 
-## Capacidad compartida
-**Turnos para socios**, consumida por Car Cruds (concesionaria) para los chequeos de sus empleados: reserva, consulta y cancelación de turnos con clave por consumidor, idempotencia y facturación por reserva. Guía para el consumidor: [docs/contracts/README.md](docs/contracts/README.md). La API de correos (Notificaciones) sigue disponible, sin consumidor asignado. El proveedor externo que consumirá el portal sigue pendiente. La identidad externa no sustituye la integración con otro grupo.
+1. Copiar `.env.example` a `.env`. Completar las contraseñas MySQL raíz y de los cuatro servicios, MongoDB, RabbitMQ y Grafana, `NOTIF_API_KEYS=consumidor:clave`, `JWT_SECRET` e `INTERNAL_API_KEY` (ambas de al menos 32 bytes). Usar valores locales; nunca subir `.env`. Evitar `@`, `:` y `/` en contraseñas insertadas en URLs/DSN. Las claves internas permanecen en el backend.
+2. Ejecutar `docker compose up -d --build`.
+3. En `frontend/`, ejecutar `npm ci` y `npm run dev`. Abrir http://127.0.0.1:5173. Vite redirige `/api` al gateway local en `8080`.
+4. Con `DEMO_PATIENT_PASSWORD` configurada, iniciar sesión con alguna cuenta de la tabla. La misma contraseña local sirve para todas las cuentas demo con correo.
 
-## Puesta en marcha local
-Requisitos: Docker con Compose. Para desarrollo sin contenedores: Go 1.26 o posterior.
-
-1. Copiar `.env.example` a `.env` y completar **todas** estas variables (valores solo locales, nunca reales):
-   `MYSQL_ROOT_PASSWORD`, `TURNOS_DB_PASSWORD`, `NOTIF_DB_PASSWORD`, `RABBITMQ_PASSWORD` (sin `@`, `:` ni `/`, porque va dentro de una URL), `MONGO_ROOT_PASSWORD`, `GRAFANA_ADMIN_PASSWORD`, `NOTIF_API_KEYS` (formato `consumidor:clave`) y `MOCK_API_KEYS`.
-2. `docker compose up --build`
-3. Reservar un turno a través del gateway (el turno debe estar al menos 24 h en el futuro):
-```powershell
-$start = (Get-Date).ToUniversalTime().AddDays(3).ToString("yyyy-MM-ddT10:00:00Z")
-$body = @{ patientId = 'pat-001'; doctorId = 'doc-001'; startAt = $start } | ConvertTo-Json
-Invoke-RestMethod http://127.0.0.1:8080/api/turnos/appointments -Method Post -ContentType application/json -Body $body -Headers @{ 'X-Correlation-ID' = 'demo-1' }
-```
-4. Ver el resultado:
-
-| Qué | Dónde |
-|---|---|
-| Correo de confirmación | Mailpit: http://localhost:8025 |
-| Traza gateway → turnos → RabbitMQ → notifications | Jaeger: http://localhost:16686 (buscar por servicio `gateway`) |
-| Tablero de estado | Grafana: http://localhost:3000 |
-| Métricas crudas | Prometheus: http://localhost:9090 |
-| Colas y DLQ | RabbitMQ: http://localhost:15672 |
-| Logs con el mismo `correlation_id` | `docker compose logs turnos notifications gateway` |
-
-Datos semilla mientras Pacientes y Médicos no están operativos: médicos `doc-001` (30 min) y `doc-002` (20 min); pacientes `pat-001`, `pat-002` (no habilitado por recepción) y `pat-003` (menor sin correo, se avisa al responsable).
-API de Turnos: `POST /api/turnos/appointments`, `GET /api/turnos/appointments/{id}` y `POST /api/turnos/appointments/{id}/cancel`. Capacidad pública: `/v1/...` por el mismo gateway ([contrato](docs/contracts/README.md)).
-
-**Pruebas**
-- Unitarias: `go test ./...`
-- Integración contra MySQL y RabbitMQ reales (requiere Docker): `go test -tags integration ./...`
-- Contrato de la capacidad publicada (con el stack levantado y `TURNOS_PARTNER_KEYS` definida; usa el puerto público `8088`): `python scripts/check_turnos_contract.py`
-- Contrato del mock de Notificaciones: `python scripts/check_contract.py`
-
-El mock en memoria sigue disponible para el grupo consumidor con `docker compose --profile mock up notifications-mock` (puerto 8086). Pacientes, Médicos e Historia clínica siguen como esqueletos con `/healthz`. Frontend: ver `frontend/README.md`.
-Despliegue público de la capacidad Turnos (T11): `https://api-turnos.srv1779429.hstgr.cloud/v1`. El gateway publica `/healthz` y las rutas de partners `/v1/...` con `X-API-Key`; la aplicación frontend continúa siendo local y no forma parte de este despliegue. Ver [`odd/tasks/entrega-final.md`](odd/tasks/entrega-final.md) para evidencia y límites.
-
-### Si cambiás contraseñas del `.env`
-Las contraseñas se aplican cuando se **crean** los contenedores y volúmenes, no cada vez que se levantan:
-- **MySQL** crea los usuarios `turnos` y `notificaciones` solo al inicializar un volumen vacío (`infra/mysql-users.sh`). Con un volumen existente, una contraseña nueva produce `Access denied for user 'notificaciones'`.
-- **RabbitMQ** toma `RABBITMQ_PASSWORD` al crear su contenedor. Si se recrea con otra contraseña, los servicios que siguen corriendo con la anterior reciben `username or password not allowed`.
-
-Después de cambiar cualquier valor del `.env`, arrancar de cero (borra los datos locales de prueba):
-```powershell
-docker compose down -v
-docker compose up --build -d
-```
-
-### Problemas frecuentes
-| Síntoma | Causa | Solución |
+| Cuenta demo | Identidad | Estado/rol |
 |---|---|---|
-| `notifications` en estado `Exited (1)` y log `NOTIF_API_KEYS=consumer:key is required` | `NOTIF_API_KEYS` sin el formato `consumidor:clave` | Corregir el `.env` (ej. `grupo-demo:clave-demo`) y `docker compose up -d notifications` |
-| `notifications` en `Exited (1)` y log `Access denied for user 'notificaciones'` | Contraseña de MySQL cambiada con un volumen existente | `docker compose down -v` y volver a levantar |
-| La reserva responde 201 pero no llega el correo a Mailpit | Notificaciones caído o sin cola: el evento queda pendiente en la outbox de Turnos | Ver `docker compose ps` y `docker compose logs notifications`. Al levantarlo, el correo llega solo, sin reservar de nuevo |
-| No se puede entrar a RabbitMQ (http://localhost:15672) | El usuario es `localuser` (no `guest`) y la contraseña es `RABBITMQ_PASSWORD` del momento en que se creó el contenedor | Usar esas credenciales, o recrear con `docker compose up -d --force-recreate rabbitmq turnos notifications` |
+| `paciente1@example.test` | `pat-001` | Paciente habilitado |
+| `paciente2@example.test` | `pat-002` | Pendiente de habilitación |
+| Sin login | `pat-003` | Menor vinculado a `pat-001` |
+| `doctor1@example.test` | `doc-001` | Médico, lunes a viernes 09:00–13:00, 30 min |
+| `doctor2@example.test` | `doc-002` | Médico, lunes a viernes 14:00–18:00, 20 min |
+| `recepcion@example.test` | `rec-001` | Recepción |
+| `admin@example.test` | `admin-001` | Administración |
 
-## Trabajo en equipo
-Propuesta inicial: main para versiones revisadas; ramas feature/... y PR con revisión de otro integrante antes de integrar. Adjuntar pruebas pertinentes. El grupo deberá acordar responsables y aplicar esta estrategia al crear el repositorio público.
-No subir claves reales, datos de pacientes ni .env. Las muestras usan dominios example.com.
+Sin `DEMO_PATIENT_PASSWORD` se crean datos ficticios, pero no se habilita su login. El registro público siempre crea pacientes, nunca personal.
 
+Para probar con una cuenta nueva: registrarla, intentar reservar (debe responder `403 PATIENT_NOT_ENABLED`), habilitarla desde la cuenta de recepción, reservar un horario ofrecido y comprobar la lista y el correo en Mailpit. No hay que emitir otro JWT después de verificarla.
+
+| Recurso local | Dirección |
+|---|---|
+| Frontend | http://127.0.0.1:5173 |
+| Gateway portal | http://127.0.0.1:8080 |
+| Gateway socios (`/v1`, claves requeridas) | http://127.0.0.1:8088 |
+| Mailpit (captura correos, no envía a Internet) | http://127.0.0.1:8025 |
+| RabbitMQ (`localuser` / contraseña configurada) | http://127.0.0.1:15672 |
+| Jaeger / Prometheus / Grafana | http://127.0.0.1:16686 / http://127.0.0.1:9090 / http://127.0.0.1:3000 |
+
+## Pruebas
+
+```sh
+go test -race ./...
+go vet ./...
+# Docker requerido: MySQL, RabbitMQ, MongoDB, Redis y OpenSearch reales
+go test -tags integration -p 1 -timeout 15m ./...
+cd frontend
+npm ci
+npm test
+npm run build
+```
+
+CI ejecuta estas suites en `.github/workflows/verify.yml`. Compilar las pruebas con `-run '^$'` solamente valida compilación; no acredita una integración ejecutada. Ver [evidencia y límites](docs/VERIFICACION.md).
+
+Con el stack local levantado, `python scripts/check_turnos_contract.py` usa `TURNOS_KEY` y opcionalmente `TURNOS_KEY_OTHER`. Crea y cancela una reserva facturada de prueba. El mock de Notificaciones se inicia con `docker compose --profile mock up notifications-mock`; su contrato se verifica con `python scripts/check_contract.py`.
+
+## Configuración y migraciones
+
+El inicio aplica migraciones aditivas de precio y amplía el motivo de cancelación a 200 caracteres. Los turnos anteriores no guardaban el precio base histórico: se fija una vez la tarifa configurada al actualizar. No se puede reconstruir un valor histórico que nunca se almacenó. Hacer copia de los datos antes de actualizar un entorno que se quiera conservar.
+
+Las contraseñas de usuarios de MySQL y RabbitMQ se aplican al inicializar sus volúmenes. Cambiar `.env` no cambia esas credenciales persistidas: actualizar los usuarios con las herramientas del motor y recrear los servicios afectados. `docker compose down -v` borra todos los datos; reservarlo para un entorno de prueba descartable. RabbitMQ ahora conserva su estado en un volumen nombrado; antes de recrear un broker antiguo sin volumen, drenar o respaldar sus mensajes.
+
+## Despliegue y contratos
+
+Se conserva el despliegue de socios de `main`: https://api-turnos.srv1779429.hstgr.cloud/v1, con `/healthz` y `/v1/*`, usando `compose.hostinger.yaml`. El frontend continúa siendo local. Esta rama no despliega cambios en ese servidor ni publica las rutas internas. El proveedor energético está implementado con el contrato versionado de RenewableEnergy; Compose usa `provider-stub` de forma predeterminada. Una llamada real al otro grupo requiere su URL y clave válidas.
+
+Documentación: [SPEC](docs/SPEC.md), [arquitectura](docs/ARCHITECTURE.md), [ADRs](docs/adr), [contrato socios](docs/contracts/README.md), [contrato Notificaciones](docs/contracts/NOTIFICATIONS.md), [frontend](frontend/README.md), [correcciones de la revisión](docs/CORRECCIONES-REVISION.md).
+
+Trabajar con ramas y PR revisadas antes de integrar en `main`. No subir claves reales ni datos de pacientes.

@@ -151,7 +151,7 @@ func TestBookingSucceedsWithPendingEnergyWhenTheProviderFails(t *testing.T) {
 	if err != nil || a.Energy.Status != domain.EnergyPending || store.rows[a.ID].Energy.Status != domain.EnergyPending || len(store.outbox) != 1 {
 		t.Fatalf("booking must succeed with pending energy: %+v err=%v", a, err)
 	}
-	if p := svc.PriceOf(a.Energy); p.TotalCents != 2_500_000 {
+	if p := svc.PriceOf(a); p.TotalCents != 2_500_000 {
 		t.Fatalf("pending total must be the base price, got %+v", p)
 	}
 }
@@ -187,7 +187,7 @@ func TestReestimatorUpdatesPendingAppointments(t *testing.T) {
 	svc, store := newEnergyService(t, est)
 	var ids []string
 	for i := 0; i < 3; i++ {
-		a, err := svc.Book(context.Background(), fmt.Sprintf("p-%d", i), "d-1", slot.Add(time.Duration(i)*time.Hour))
+		a, err := svc.Book(context.Background(), fmt.Sprintf("p-%d", i), "d-1", slot.Add(time.Duration(i)*30*time.Minute))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -213,10 +213,30 @@ func TestReestimatorStopsTheBatchWhenTheProviderFails(t *testing.T) {
 	est := &fakeEstimator{err: ErrEnergyUnavailable}
 	svc, _ := newEnergyService(t, est)
 	for i := 0; i < 3; i++ {
-		_, _ = svc.Book(context.Background(), fmt.Sprintf("p-%d", i), "d-1", slot.Add(time.Duration(i)*time.Hour))
+		_, _ = svc.Book(context.Background(), fmt.Sprintf("p-%d", i), "d-1", slot.Add(time.Duration(i)*30*time.Minute))
 	}
 	est.calls = nil
 	if n := svc.ReestimatePending(context.Background(), 10); n != 0 || len(est.calls) != 1 {
 		t.Fatalf("updated=%d calls=%d", n, len(est.calls))
+	}
+}
+
+func TestConfirmedTariffSurvivesConfigurationChange(t *testing.T) {
+	est := &fakeEstimator{err: ErrEnergyUnavailable}
+	svc, store := newEnergyService(t, est)
+	a, err := svc.BookForPatient(context.Background(), "p-1", "d-1", slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.Tariff = domain.Tariff{BaseCents: 3_000_000, CentsPerKWh: 99_000}
+	est.err = nil
+	est.microKWh = 381_000
+	if n := svc.ReestimatePending(context.Background(), 1); n != 1 {
+		t.Fatalf("reestimated %d", n)
+	}
+	persisted, _ := store.Get(context.Background(), a.ID)
+	p := svc.PriceOf(persisted)
+	if p.BaseCents != 2_500_000 || p.Energy.CostCents != 6858 || p.TotalCents != 2_506_858 {
+		t.Fatalf("confirmed price changed: %+v", p)
 	}
 }

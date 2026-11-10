@@ -1,137 +1,52 @@
-# portal-paciente-clinica — Arquitectura
-`docs/ARCHITECTURE.md` · Versión Entrega Final (2026-11-11)
+# Arquitectura del portal
 
-Describe la arquitectura del portal de pacientes y profesionales para la Clínica Arroyo Claro, implementado como un sistema distribuido de microservicios con políglota de persistencia, mensajería asíncrona, balanceo de carga, caché distribuida, búsqueda indexada, observabilidad de extremo a extremo e integración con servicios de terceros.
+Estado del código después de la revisión de `main` del 10/11/2026. Los requisitos objetivo están en [SPEC](SPEC.md); las funciones pendientes y la matriz F01–F17 están en [CORRECCIONES-REVISION](CORRECCIONES-REVISION.md).
 
----
+## Componentes y propiedad de datos
 
-## 1. Contexto y alcance
+| Componente | Responsabilidad | Persistencia |
+|---|---|---|
+| React/TypeScript | Interfaz por rol, adaptación de DTO y estado de solicitudes | Sesión en navegador |
+| Gateway Go | JWT, limpieza de identidad, límites y balanceo Turnos | Estado de salud y token buckets en memoria |
+| Turnos, hexagonal | Disponibilidad, agenda, reservas, precios, API de socios | MySQL 8.4; Redis 7.4 como caché |
+| Pacientes, capas | Registro/login, perfiles, habilitación y responsables | MySQL 8.4 |
+| Médicos, hexagonal | Perfiles, especialidades, búsqueda y proyección de reservas | MySQL 8.4; OpenSearch 3.0.0 |
+| Historia Clínica, capas | Encuentros, notas y autorización clínica | MongoDB 8.0, base `historia_clinica` |
+| Notificaciones, capas | API de correo, eventos, avisos, reintentos | MySQL 8.4; SMTP a Mailpit local |
+| RabbitMQ 4.1 | Eventos `portal.events.v1`, reintentos y DLQ | Colas durables y volumen nombrado |
 
-El portal atiende a los pacientes, profesionales médicos y personal de recepción de la clínica:
-- **Pacientes**: Registro autogestionado, inicio de sesión seguro, búsqueda de profesionales por especialidad y disponibilidad, cotización transparente con costo energético, reserva de turnos, consulta de historial de citas y visualización de su historia clínica y notas de atención.
-- **Médicos**: Inicio de sesión con rol profesional (`doctor`), visualización de su agenda diaria/semanal, acceso a datos de contacto de sus pacientes citados y registro autorizado de notas clínicas en los encuentros de atención.
-- **Recepción / Administración**: Verificación de pacientes, gestión de vínculos familiares (menores a cargo) y bloqueos de agenda.
-- **Socios externos (Car Cruds)**: Consumo M2M de la capacidad propia de Turnos (`/v1/appointments`, `/v1/doctors`, `/v1/usage`) autenticado mediante clave de API (`X-API-Key`) e idempotencia (`Idempotency-Key`), con facturación en ARS (ADR-008).
-- **Proveedor externo (ArquitecturasoftwareRenewableEnergy)**: Consulta síncrona HTTP desde el microservicio de Turnos para estimar el consumo eléctrico (kWh) del equipamiento médico de cada consulta, calculando la clínica el costo en pesos según su tarifa interna (ADR-009, ADR-014).
+No se accede a bases de otros servicios. Pacientes expone `GET /internal/patients/{id}` con `X-Service-Key` y Turnos `GET /internal/relationships?doctorId=...&patientId=...`. Se requiere `INTERNAL_API_KEY` de 32 bytes o más al iniciar. El gateway no expone estas rutas. Los clientes internos tienen timeout de 400 ms, rechazan redirecciones y no reciben contraseñas ni hashes.
 
----
+## Entradas y autorización
 
-## 2. Componentes y distribución del sistema
+El gateway tiene dos escuchas: `8080` para el portal (`/api/*`, JWT) y métricas; `8088` para socios (`/v1/*`, API key) y `/healthz`. El despliegue Hostinger expone únicamente la segunda por HTTPS. El frontend se ejecuta localmente; no contiene claves de servicio.
 
-```
-                                  [ Navegador Web / Cliente ]
-                                               │
-                                               ▼
-                                 ┌───────────────────────────┐
-                                 │     Frontend (Vite/React) │
-                                 │   SPA TypeScript / CSS    │
-                                 └─────────────┬─────────────┘
-                                               │ HTTP (Port 8080 / 8088)
-                                               ▼
- ┌────────────────────────────────────────────────────────────────────────────────────────┐
- │                              API Gateway (Go net/http)                                 │
- │  - Autenticación JWT (ADR-014)           - Rate Limiting por IP/Token                  │
- │  - Health Checks activos (2s)            - Balanceo Round-Robin Turnos (ADR-012)       │
- └───────┬──────────────┬──────────────┬──────────────┬──────────────┬────────────────────┘
-         │              │              │              │              │
-         │ :8082        │ :8083        │ :8081        │ :8084        │ :8085
-         ▼              ▼              ▼              ▼              ▼
-   ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐
-   │ Pacientes │  │  Médicos  │  │  Turnos   │  │  Historia │  │Notificac. │
-   │   (Go)    │  │   (Go)    │  │(Turnos-1/2│  │  Clínica  │  │   (Go)    │
-   └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘
-         │              │              │              │              │
-         ▼              ▼              ▼              │              ▼
-   ┌───────────┐  ┌───────────┐  ┌───────────┐        │        ┌───────────┐
-   │   MySQL   │  │   MySQL   │  │   MySQL   │        │        │   MySQL   │
-   │ pacientes │  │  medicos  │  │  turnos   │        │        │  notific. │
-   └───────────┘  └─────┬─────┘  └─────┬─────┘        │        └───────────┘
-                        │              │              │
-                        ▼              ├──────────────┤
-                  ┌───────────┐        │  RabbitMQ    │◄─ (Outbox publisher)
-                  │OpenSearch │        │  Events      │
-                  │  Index    │        └──┬────────┬──┘
-                  └───────────┘           │        │
-                                          ▼        ▼
-                                   ┌──────────┐ ┌──────────┐
-                                   │ Historia │ │Notificac.│
-                                   │ Consumer │ │ Consumer │
-                                   └────┬─────┘ └────┬─────┘
-                                        ▼            ▼
-                                  ┌──────────┐ ┌──────────┐
-                                  │ MongoDB  │ │ Mailpit  │
-                                  │ Encounters│ │  SMTP    │
-                                  └──────────┘ └──────────┘
-```
+Pacientes emite JWT HS256 con `sub`, `role`, `iss`, `iat` y `exp`; gateway valida firma, issuer, expiración, identidad y rol (`patient`, `doctor`, `reception`, `admin`), elimina los headers de identidad del cliente e inyecta los verificados. El registro público no acepta roles. Las cuentas demo de personal son optativas mediante `DEMO_PATIENT_PASSWORD`.
 
-### 2.1 Frontend Web — React 19, Vite, TypeScript
-- Aplicación de página única (SPA) sin librerías pesadas de interfaz, desarrollada bajo un diseño visual moderno (*Boarding Pass / Live Board*) centrado en accesibilidad y claridad operativa.
-- Flujos completos: Registro y login con autodetección de rol (`patient` o `doctor`), buscador reactivo de profesionales con filtros de especialidad y ordenamiento, confirmación de reserva con desglose de costo energético, timeline clínico personal, y pantalla de agenda profesional para médicos con formulario de notas de atención.
+Turnos consulta a Pacientes antes de reservar; un JWT no sustituye la habilitación. Un paciente desconocido se rechaza y una dependencia caída produce 503, sin inventar habilitación. Historia Clínica consulta habilitación actual y relación: propio paciente, responsable adulto verificado de menor o médico con turno no cancelado. Recepción y administración no leen contenido clínico. Las notas requieren además la asignación del profesional al encuentro.
 
-### 2.2 API Gateway — Go `net/http`
-- Punto único de entrada al clúster (ADR-008, ADR-012, ADR-014).
-- Expone dos escuchas independientes:
-  - **Puerto Portal (`8080`)**: Atiende `/api/*` y `/metrics`. Valida tokens JWT emitidos por Pacientes, limpia encabezados spoofables del cliente (`X-Patient-Id`, `X-User-Role`), inyecta la identidad verificada y aplica limitación de tasa por IP o sujeto.
-  - **Puerto Público (`8088`)**: Atiende `/v1/*` (capacidad propia para Car Cruds) y `/healthz`. Aislamiento estricto: no rutea rutas del portal ni métricas internas.
-- **Balanceo dinámico**: Mantiene un pool de réplicas para el servicio de Turnos (`turnos-1` y `turnos-2`). Ejecuta verificaciones de salud activas cada 2 segundos (`GET /healthz`), retirando de la rotación instancias caídas tras 2 fallos consecutivos y reincorporándolas automáticamente.
+## Reserva, concurrencia y lectura
 
-### 2.3 Turnos — Go (Arquitectura Hexagonal) · Operativo Replicado
-- Autoridad única sobre la agenda, disponibilidad, duraciones de cita, precios y reservas.
-- **Control de concurrencia (ADR-004)**: Bloqueo pesimista a nivel de fila (`booking_locks`) ordenado lexicográficamente por médico y paciente (`SELECT ... FOR UPDATE`), garantizando cero deadlocks y prevención absoluta de citas solapadas sobre intervalos semiabiertos `[start, end)`.
-- **Caché distribuida (ADR-007)**: Integrada en la consulta de disponibilidad (`/doctors/{id}/availability?date=...`) usando Redis con TTL de 5 minutos e invalidación reactiva inmediata tras cada reserva o cancelación. Demostró una reducción del 99.7% en consultas SQL y latencias p50 de 775 µs bajo 200 req/s.
-- **Consumo de Energía (ADR-009, S14)**: Invoca al proveedor externo `ArquitecturasoftwareRenewableEnergy` (`POST /api/v1/estimaciones-consumo`) con circuit breaker (umbral de 2 fallos consecutivos, timeout de 150 ms, fallback degradado en estado `pending`).
-- **Publicación Transaccional (Outbox, ADR-005)**: Escribe eventos de dominio en la tabla `outbox` en la misma transacción MySQL que el turno, con un despachador en segundo plano que publica hacia RabbitMQ (`turnos.exchange`).
+La transacción adquiere las filas de `booking_locks` ordenadas por recurso, usando su misma conexión SQL para crearlas y bloquearlas. Se comprueban los solapamientos semiabiertos `[inicio, fin)`, anticipación de 24 h, días/horas y duración. No se promete ausencia de deadlocks de InnoDB: los errores 1213/1205 reintentan la transacción hasta tres veces.
 
-### 2.4 Pacientes — Go (Arquitectura en Capas)
-- Almacena perfiles de pacientes, vínculos entre adultos y menores (`responsible_id`), estado de habilitación y cuentas de acceso.
-- Criptografía segura: Contraseñas hasheadas con BCrypt (costo 10 en producción, mínimo en pruebas).
-- Autenticación y Emisión de Identidad (ADR-014): Emite JWTs firmados con HS256 (`JWT_SECRET` compartido con el Gateway) con claims estandarizados (`sub`, `role`, `iss`, `iat`, `exp`). Soporta roles `patient` y `doctor`.
-- Sembrado automático de cuentas demo operativas (`paciente1@example.test`, `doctor1@example.test`) con contraseñas seguras configurables.
+La agenda inicial de Turnos mantiene dos profesionales semilla, de lunes a viernes: `doc-001`, 09:00–13:00, 30 min; `doc-002`, 14:00–18:00, 20 min. Perfiles activos y especialidades se consultan en Médicos. Se admiten inicios intermedios dentro de la ventana de atención; la grilla mostrada es una sugerencia. Portal y socios aplican las mismas reglas de escritura. La edición de agenda y sus bloqueos siguen pendientes.
 
-### 2.5 Médicos — Go (Arquitectura en Capas)
-- Administra el maestro de profesionales y especialidades médicas en MySQL.
-- **Búsqueda indexada en OpenSearch (ADR-006, S9)**: Sincroniza perfiles hacia el índice `doctors` en OpenSearch. Provee búsqueda de texto completo difusa (`match` / `prefix`), filtrado exacto por código de especialidad, soporte para menores (`acceptsMinors`), ordenamiento por nombre o próxima disponibilidad (`nextAvailableAt`), y paginación estructurada.
-- Consumidor RabbitMQ: Escucha eventos `turnos.reservado.v1` y `turnos.cancelado.v1` para recalcular y reindexar asíncronamente en OpenSearch la fecha del próximo turno libre de cada profesional.
+Disponibilidad usa Redis con TTL de **30 s** e invalidación después del commit. Una falla de Redis vuelve al cálculo autoritativo; una lectura cacheada nunca autoriza una reserva. Las listas de turnos sirven páginas de 100, próximos activos primero, luego anteriores activos y cancelados, con desempate por ID y `nextPage=0` al terminar. La paginación por offset puede cambiar entre solicitudes si se modifica la agenda; la interfaz deduplica por ID y refresca las páginas cargadas.
 
-### 2.6 Historia Clínica — Go (Arquitectura en Capas) · MongoDB
-- Base de datos no relacional orientada a documentos (MongoDB, ADR-003). Almacena documentos de atención médica enriquecibles con esquemas JSON Schema flexibles.
-- **Consumidor Idempotente**: Escucha eventos de Turnos desde RabbitMQ y actualiza la colección `encounters` usando colección de deduplicación `processed_events`.
-- **Autorización por encuentro (T12)**: El endpoint `POST /records/{appointmentId}/notes` exige rol `doctor` y verifica en la base de datos que el médico que escribe sea exactamente el profesional asignado a esa consulta (retornando `403 Forbidden` si otro médico intenta redactar notas).
+## Eventos y búsqueda
 
-### 2.7 Notificaciones — Go (Arquitectura en Capas)
-- Gestión de plantillas y catálogo de avisos.
-- Consumidor de eventos de reserva y cancelación con despacho de correos electrónicos transaccionales a través de Mailpit SMTP e inbox idempotente contra duplicados.
-- Capacidad de simulación y testing local.
+Turno y evento outbox se escriben en la misma transacción. Antes de publicar, ambos relays inicializan la topología completa: colas de Notificaciones, Historia y Médicos, sus enlaces, DLQ y colas de reintento de 5/30/120 s. Una confirmación `mandatory` no prueba por sí sola que estén presentes todas las suscripciones; por eso las declara el productor. Se conserva la entrega al menos una vez y cada consumidor debe ser idempotente.
 
----
+Médicos actualiza MySQL y luego OpenSearch. Las reentregas reindexan desde el estado actual aun si SQL ya aplicó el evento, para reparar un fallo entre ambas escrituras. Búsqueda combina nombre y códigos de especialidad normalizados (tildes y espacios), conserva filtros y paginación. No existe búsqueda SQL de contingencia ante caída de OpenSearch.
 
-## 3. Propiedad y segregación de datos
+## Proveedor energético y precio
 
-| Servicio | Motor de Base de Datos | Base / Colección | Rol del Almacenamiento |
-|---|---|---|---|
-| Turnos | MySQL 8.4 (InnoDB) | `turnos` | Transaccional primario (citas, bloqueos, outbox, facturación socios) |
-| Turnos (Caché) | Redis 7.2 | DB 0 (`availability:v1:*`) | Proyección volátil de disponibilidad de lectura (TTL 5 min) |
-| Pacientes | MySQL 8.4 (InnoDB) | `pacientes` | Transaccional primario (usuarios, roles, hashes, vínculos familiares) |
-| Médicos | MySQL 8.4 (InnoDB) | `medicos` | Maestro autoritativo relacional (médicos, especialidades) |
-| Médicos (Búsqueda) | OpenSearch 2.18 | Índice `doctors` | Proyección optimizada para búsqueda full-text y filtros |
-| Historia Clínica | MongoDB 7.0 | `historia.encounters` | Documental (atenciones, diagnósticos, notas clínicas) |
-| Historia Clínica (Inbox) | MongoDB 7.0 | `historia.processed_events` | Control de idempotencia de mensajería |
-| Notificaciones | MySQL 8.4 (InnoDB) | `notificaciones` | Registro de envíos, plantillas, avisos y claves de idempotencia |
+Turnos consume `ArquitecturasoftwareRenewableEnergy` con contrato versionado en `docs/contracts/providers/renewable-energy-v1`. El presupuesto inline es 1.200 ms y el de reestimación 5 s; el circuito abre tras cinco fallos durante 30 s. Se rechazan las redirecciones para evitar reenviar `X-API-Key` a otro origen. La reserva se confirma aunque la energía quede `pending`; las llamadas se realizan después del commit, fuera de los bloqueos.
 
-Ningún servicio accede de forma directa a la base de datos de otro. Todo cruce de información se efectúa mediante contratos HTTP tipados o eventos de dominio asíncronos.
+Cada reserva nueva conserva precio base y tarifa por kWh. La energía pendiente se calcula con esa tarifa original. Las filas antiguas se completan una vez con la configuración del primer inicio actualizado, porque el precio histórico no era recuperable. Los socios mantienen su precio separado en `partner_bookings`.
 
----
+## Límites operativos
 
-## 4. Limitaciones conocidas y deuda técnica aceptada (S11)
+Los token buckets son locales a un gateway: máximo 10.000 claves, rechazo temporal de nuevas claves si no hay espacio y limpieza como máximo una vez por segundo. Varias réplicas multiplicarían el límite de tráfico. JWT no tiene revocación inmediata general; los controles de reserva y clínica sí consultan habilitación actual.
 
-En cumplimiento con la especificación S11 de la Entrega Final, se explicitan los compromisos de diseño y la deuda técnica asumida:
-
-| Ítem | Descripción y Motivo | Deuda técnica aceptada | Estrategia de mitigación / Futuro |
-|---|---|---|---|
-| **Revocación de JWT** | La autenticación del portal utiliza JWTs firmados con HS256 sin verificación contra base de datos en cada petición del Gateway (ADR-014). | Si un usuario es inhabilitado por recepción o se cambia su rol, su token emitido permanece válido hasta su expiración (TTL de 60 minutos). | Aceptada para mantener el Gateway liviano y desacoplado de MySQL. Mitigación: TTL corto (1h); a futuro, lista negra de tokens revocados en Redis con tiempo de expiración sincronizado. |
-| **Rate Limiter en Memoria en Gateway** | El control de tasa de solicitudes del portal y de socios se computa con un algoritmo Token Bucket en la memoria del proceso del Gateway. | Si se despliegan múltiples réplicas del Gateway detrás de un Load Balancer L4/L7, el límite efectivo se multiplica por la cantidad de réplicas. | Aceptada para el alcance actual de una única instancia de Gateway. En un entorno multi-gateway, migrar los cubos a Redis mediante scripts Lua atómicos. |
-| **Algoritmo de Balanceo Round-Robin Simple** | El Gateway distribuye equitativamente las peticiones entre `turnos-1` y `turnos-2` (ADR-012) mediante un contador atómico circular. | No pondera la latencia instantánea, uso de CPU o memoria de cada réplica de backend. | Aceptada: las consultas de Turnos tienen tiempos de procesamiento homogéneos y la concurrencia está acotada. Se mitiga con verificaciones de salud activas cada 2s que aíslan nodos con fallas. |
-| **Consumo del Proveedor Energético Degradado** | El microservicio de Turnos consulta la estimación de consumo energético mediante un circuit breaker local con timeout estricto de 150 ms (ADR-009). | Ante caída o lentitud del proveedor externo, el turno se confirma con estado de energía `pending` y costo cero en la reserva inmediata. | Decisión consciente de disponibilidad sobre consistencia inmediata: una falla en un servicio accesorio de estimación no debe impedir la atención médica del paciente. Un worker de reconciliación reintenta la cotización en segundo plano. |
-| **Tarifa Energética en ARS Local** | El proveedor externo `ArquitecturasoftwareRenewableEnergy` v1 únicamente devuelve estimación física en kWh; no cotiza valores monetarios. | El cálculo monetario en ARS se efectúa con una constante de tarifa propia configurada en Turnos ($180 ARS/kWh). | Aceptada: refleja fielmente la realidad del negocio, donde la clínica fija su propio precio de venta por la energía consumida en el consultorio. |
-| **Filtro de contingencia en Búsqueda de Médicos** | La búsqueda de profesionales prioriza OpenSearch. | Si OpenSearch no estuviera disponible, no existe un fallback SQL complejo que emule la búsqueda semántica difusa y fonética. | Aceptada: OpenSearch cuenta con reinicio automático de contenedor en Docker Compose y volumen persistente de datos. |
-| **Despacho de Correos a Mailpit** | Las notificaciones por email se envían a través del servidor local Mailpit emulando SMTP. | No se envían correos a bandejas reales de Internet para evitar costos de infraestructura externa (SendGrid/AWS SES) y rebotes de prueba. | Aceptada: Mailpit expone interfaz gráfica web y API REST para auditar el contenido exacto y destinatarios de cada mensaje saliente. |
+El balanceador sondea cada 2 s con 500 ms de timeout y retira una réplica tras dos fallos. Una escritura puede fallar antes de que se detecte la caída; no se reenvía automáticamente por su resultado incierto. El cliente informa esa incertidumbre y su timeout cubre headers y cuerpo. Las métricas antiguas de carga no acreditan el rendimiento de esta rama; ver [VERIFICACION](VERIFICACION.md).

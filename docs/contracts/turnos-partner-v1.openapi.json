@@ -58,7 +58,7 @@
           "404": { "description": "UNKNOWN_DOCTOR or UNKNOWN_PATIENT", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "409": { "description": "SLOT_UNAVAILABLE or IDEMPOTENCY_CONFLICT", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "415": { "description": "UNSUPPORTED_MEDIA_TYPE", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "422": { "description": "LEAD_TIME_TOO_SHORT", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "422": { "description": "LEAD_TIME_TOO_SHORT o OUTSIDE_SCHEDULE (agenda de atención en ART, UTC-03:00)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "503": { "$ref": "#/components/responses/Unavailable" }
         }

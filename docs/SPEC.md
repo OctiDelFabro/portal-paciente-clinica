@@ -60,12 +60,21 @@ El proyecto y el repositorio se llaman portal-paciente-clinica. El repositorio p
 ## 6. Estado de este paquete
 Se incorporan las respuestas posteriores a la última versión guardada en Drive y se adjuntan contrato, mock y estructura inicial. Este archivo no acredita funcionalidades clínicas implementadas. El contenido completo de la primera entrega está publicado en main del repositorio público.
 
-## 7. Estado de implementación (Entrega 2)
-| Requisito | Estado |
-|---|---|
-| RF-02 Reserva (24 h, sin superposiciones, concurrencia) | Implementado en Turnos. Agenda y bloqueos todavía no; los médicos vienen de datos semilla. |
-| RF-03 Cancelación (24 h) | Implementado en Turnos. |
-| RF-12 Notificaciones (correo por evento, aviso del portal, menores → responsable, API pública) | Implementado para reserva y cancelación; recordatorios pendientes. |
-| RF-13 Habilitación por recepción | Respetada al reservar: un paciente no habilitado recibe 403 `PATIENT_NOT_ENABLED`. El registro todavía no está implementado. |
-| RF-01, RF-04 a RF-11 | Pendientes para la presentación final. |
+## 7. Estado de implementación después de la revisión (10/11/2026)
 
+| Requisito | Implementación y límite |
+|---|---|
+| RF-01 | Búsqueda, filtros y paginación; texto por nombre y especialidad. |
+| RF-02/RF-03 | Reserva y cancelación propias con 24 h, habilitación actual, ventana de agenda y no superposición. Listas paginadas. La asignación por recepción sigue pendiente. |
+| RF-04 | Reprogramación atómica pendiente; no sustituirla por cancelar y reservar. |
+| RF-05 | Recepción verifica vínculos y backend clínico autoriza al responsable de un menor. Gestión de turnos y selector de menores pendientes. |
+| RF-06/RF-07 | Agenda inicial en Turnos; configuración por médico, bloqueos y su cancelación excepcional pendientes. |
+| RF-08/RF-09 | Agenda propia y notas del médico asignado implementadas; consulta de agenda por recepción pendiente. |
+| RF-10 | Historia propia y lectura autorizada para médico/responsable; recepción rechazada. |
+| RF-11/RF-13 | Registro propio, login, lista/verificación y vínculo por recepción. Alta/edición general de datos por recepción pendientes. |
+| RF-12 | Correo por reserva/cancelación con contactos actuales y avisos persistidos. Recordatorios y lectura de avisos pendientes. |
+| RF-14 | API de socios con idempotencia, aislamiento, precio persistido y mismas reglas de reserva. |
+
+Política de precios del portal: precio base y tarifa por kWh se conservan al reservar; la energía puede quedar pendiente. Las reservas anteriores se completan con la tarifa configurada al actualizar, sin afirmar recuperación del precio histórico. La agenda admite inicios dentro de la ventana aunque no coincidan con la grilla sugerida, siempre sin superposición.
+
+Consultar [CORRECCIONES-REVISION.md](CORRECCIONES-REVISION.md) y [VERIFICACION.md](VERIFICACION.md). Esta tabla describe implementación; no certifica ausencia de otros defectos ni una integración real que no se haya ejecutado.

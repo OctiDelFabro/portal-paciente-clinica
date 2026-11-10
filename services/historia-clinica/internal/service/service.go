@@ -19,11 +19,12 @@ import (
 const MaxNoteLength = 4000
 
 var (
-	ErrUnprocessable = errors.New("unprocessable event")
-	ErrInvalidNote   = errors.New("invalid note")
-	ErrNotFound      = errors.New("encounter not found")
-	ErrCancelled     = errors.New("encounter is cancelled")
-	ErrForbidden     = errors.New("doctor is not assigned to this appointment")
+	ErrUnprocessable     = errors.New("unprocessable event")
+	ErrInvalidNote       = errors.New("invalid note")
+	ErrNotFound          = errors.New("encounter not found")
+	ErrCancelled         = errors.New("encounter is cancelled")
+	ErrAccessUnavailable = errors.New("clinical authorization unavailable")
+	ErrForbidden         = errors.New("doctor is not assigned to this appointment")
 )
 
 const (
@@ -96,10 +97,20 @@ type Store interface {
 	Ping(ctx context.Context) error
 }
 
+type AccessPolicy interface {
+	Authorize(context.Context, string, string, string) error
+}
+type AccessFunc func(context.Context, string, string, string) error
+
+func (f AccessFunc) Authorize(ctx context.Context, role, caller, patient string) error {
+	return f(ctx, role, caller, patient)
+}
+
 type Service struct {
-	Store Store
-	Now   func() time.Time
-	NewID func() string
+	Access AccessPolicy
+	Store  Store
+	Now    func() time.Time
+	NewID  func() string
 }
 
 var statusByType = map[string]string{
@@ -153,6 +164,12 @@ func (s *Service) AddNote(ctx context.Context, appointmentID, doctorID, role, te
 	if enc.Status == StatusCancelled {
 		return Note{}, ErrCancelled
 	}
+	if s.Access == nil {
+		return Note{}, ErrAccessUnavailable
+	}
+	if err := s.Access.Authorize(ctx, role, doctorID, enc.PatientID); err != nil {
+		return Note{}, err
+	}
 	n := Note{ID: s.NewID(), Text: text, AuthorRole: role, CreatedAt: s.Now().UTC()}
 	if err := s.Store.AddNote(ctx, appointmentID, n); err != nil {
 		return Note{}, err
@@ -166,3 +183,13 @@ func (s *Service) Timeline(ctx context.Context, patientID string) ([]Encounter, 
 }
 
 func (s *Service) Ping(ctx context.Context) error { return s.Store.Ping(ctx) }
+
+func (s *Service) TimelineFor(ctx context.Context, role, caller, patient string) ([]Encounter, error) {
+	if s.Access == nil {
+		return nil, ErrAccessUnavailable
+	}
+	if err := s.Access.Authorize(ctx, role, caller, patient); err != nil {
+		return nil, err
+	}
+	return s.Store.Timeline(ctx, patient)
+}
