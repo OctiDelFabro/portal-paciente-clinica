@@ -18,6 +18,11 @@ var people = map[string]person{
 	"pat-001": {email: "paciente1@example.test"},
 	"pat-002": {email: "paciente2@example.test"},
 	"pat-003": {responsible: "pat-001"},
+	"pat-004": {email: "paciente4@example.test"},
+	"pat-005": {email: "paciente5@example.test"},
+	"pat-006": {email: "paciente6@example.test"},
+	"pat-007": {responsible: "pat-004"},
+	"pat-008": {email: "paciente8@example.test"},
 }
 
 type Seed struct{}

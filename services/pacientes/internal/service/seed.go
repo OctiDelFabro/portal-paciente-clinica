@@ -23,6 +23,13 @@ var demoPatients = []repository.Patient{
 	{ID: "pat-003", FullName: "Tomas Fernandez", DocumentNumber: "50111003", BirthDate: date(2015, 3, 10), Enabled: true, ResponsibleID: "pat-001", Role: "patient"},
 	{ID: "doc-001", Email: "doctor1@example.test", FullName: "Laura Gomez", DocumentNumber: "20111001", BirthDate: date(1980, 4, 12), Enabled: true, Role: "doctor"},
 	{ID: "doc-002", Email: "doctor2@example.test", FullName: "Martin Pereyra", DocumentNumber: "20111002", BirthDate: date(1982, 8, 20), Enabled: true, Role: "doctor"},
+	{ID: "doc-003", Email: "doctor3@example.test", FullName: "Sofia Ramirez", DocumentNumber: "20111003", BirthDate: date(1987, 2, 5), Enabled: true, Role: "doctor"},
+	{ID: "doc-004", Email: "doctor4@example.test", FullName: "Julian Acosta", DocumentNumber: "20111004", BirthDate: date(1979, 9, 28), Enabled: true, Role: "doctor"},
+	{ID: "pat-004", Email: "paciente4@example.test", FullName: "Valentina Ruiz", DocumentNumber: "30111004", BirthDate: date(1992, 1, 23), Enabled: true, Role: "patient"},
+	{ID: "pat-005", Email: "paciente5@example.test", FullName: "Joaquin Medina", DocumentNumber: "30111005", BirthDate: date(1978, 7, 9), Enabled: true, Role: "patient"},
+	{ID: "pat-006", Email: "paciente6@example.test", FullName: "Camila Torres", DocumentNumber: "30111006", BirthDate: date(1995, 12, 14), Enabled: false, Role: "patient"},
+	{ID: "pat-007", FullName: "Benjamin Ruiz", DocumentNumber: "50111007", BirthDate: date(2018, 5, 30), Enabled: true, ResponsibleID: "pat-004", Role: "patient"},
+	{ID: "pat-008", Email: "paciente8@example.test", FullName: "Rosa Aguirre", DocumentNumber: "30111008", BirthDate: date(1961, 10, 3), Enabled: true, Role: "patient"},
 }
 
 func date(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }

@@ -1,15 +1,33 @@
-# Hostinger VPS overlay. Traefik already runs on the host and terminates HTTPS;
-# only the gateway's partner listener is routed through it.
+# Hostinger VPS overlay. Traefik terminates HTTPS for the portal and the
+# partner API. Internal portal API routes are proxied only to the authenticated
+# gateway listener; partner routes stay on the restricted public listener.
 services:
   gateway:
     labels:
       traefik.enable: "true"
       traefik.docker.network: portal-paciente-clinica_default
-      traefik.http.routers.turnos-public.rule: "Host(`${TURNOS_PUBLIC_HOST:?Definir TURNOS_PUBLIC_HOST}`)"
+      traefik.http.routers.turnos-public.rule: "Host(`${TURNOS_PUBLIC_HOST:?Definir TURNOS_PUBLIC_HOST}`) && (PathPrefix(`/v1`) || Path(`/healthz`))"
       traefik.http.routers.turnos-public.entrypoints: websecure
       traefik.http.routers.turnos-public.tls.certresolver: letsencrypt
       traefik.http.routers.turnos-public.service: turnos-public
       traefik.http.services.turnos-public.loadbalancer.server.port: "8088"
+      traefik.http.routers.portal-api.rule: "Host(`${TURNOS_PUBLIC_HOST:?Definir TURNOS_PUBLIC_HOST}`) && PathPrefix(`/api`)"
+      traefik.http.routers.portal-api.entrypoints: websecure
+      traefik.http.routers.portal-api.tls.certresolver: letsencrypt
+      traefik.http.routers.portal-api.service: portal-api
+      traefik.http.services.portal-api.loadbalancer.server.port: "8080"
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.frontend
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: portal-paciente-clinica_default
+      traefik.http.routers.portal-web.rule: "Host(`${TURNOS_PUBLIC_HOST:?Definir TURNOS_PUBLIC_HOST}`) && !PathPrefix(`/api`) && !PathPrefix(`/v1`) && !Path(`/healthz`)"
+      traefik.http.routers.portal-web.entrypoints: websecure
+      traefik.http.routers.portal-web.tls.certresolver: letsencrypt
+      traefik.http.routers.portal-web.service: portal-web
+      traefik.http.services.portal-web.loadbalancer.server.port: "80"
   opensearch:
     # Keep its native/JVM memory bounded on the shared 8 GiB VPS.
     mem_limit: 1536m

@@ -19,6 +19,8 @@ var SeedDoctors = []struct {
 }{
 	{"doc-001", "Laura Gómez", []string{"clinica-medica", "cardiologia"}, false},
 	{"doc-002", "Martín Pereyra", []string{"pediatria", "clinica-medica"}, true},
+	{"doc-003", "Sofía Ramírez", []string{"dermatologia", "clinica-medica"}, false},
+	{"doc-004", "Julián Acosta", []string{"cardiologia", "pediatria"}, true},
 }
 
 func (s *Store) seed(ctx context.Context) error {
