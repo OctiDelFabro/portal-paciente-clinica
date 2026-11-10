@@ -187,6 +187,7 @@ services:
     volumes: [mongo-data:/data/db]
   rabbitmq:
     image: rabbitmq:4.1-management
+    hostname: rabbitmq
     environment:
       RABBITMQ_DEFAULT_USER: localuser
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}

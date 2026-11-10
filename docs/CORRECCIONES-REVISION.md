@@ -35,7 +35,7 @@ Recepción y administración pueden verificar pacientes y registrar vínculos ad
 - `npm test`: pasaron los cuatro tests del cliente TypeScript.
 - `npm run build`: pasó TypeScript y Vite.
 - `go test -tags integration -run '^$' ./...`: compiló; no ejecutó pruebas de integración.
-- Docker no está disponible en el entorno de edición. La prueba local de Chromium fue bloqueada por permisos del entorno al crear su socket. La ejecución real de infraestructura y los cinco recorridos de navegador se delegan al workflow versionado; comprobar su resultado en el PR. Los recorridos de navegador usan respuestas HTTP simuladas con forma del servicio, no infraestructura clínica real.
+- Docker no está disponible en el entorno de edición. La prueba local de Chromium fue bloqueada por permisos del entorno al crear su socket. Se agregó el workflow para ejecutar infraestructura real y los cinco recorridos de navegador. GitHub no inició ninguno de sus jobs: informó que la cuenta está bloqueada por un problema de facturación (ejecución 42893377415). No hubo resultados remotos de pruebas. Los recorridos de navegador usan respuestas HTTP simuladas con forma del servicio, no infraestructura clínica real.
 
 ## Migración y operación
 

@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   unit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +21,7 @@ jobs:
       - run: go test -race ./...
       - run: go vet ./...
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
       - run: npm run test:ui
         working-directory: frontend
   integration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4

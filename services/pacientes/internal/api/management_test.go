@@ -61,3 +61,31 @@ func TestPrivateProfileAndVerificationRequireDistinctAuthorization(t *testing.T)
 		t.Fatalf("reception failed: %d %s", r.Code, r.Body)
 	}
 }
+
+func TestResponsibleRelationshipRequiresAValidMinorAndVerifiedAdult(t *testing.T) {
+	now := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+	store := &memStore{byID: map[string]repository.Patient{
+		"child":       {ID: "child", Role: "patient", Enabled: true, BirthDate: now.AddDate(-10, 0, 0)},
+		"adult":       {ID: "adult", Role: "patient", Enabled: true, BirthDate: now.AddDate(-30, 0, 0)},
+		"unverified":  {ID: "unverified", Role: "patient", BirthDate: now.AddDate(-30, 0, 0)},
+		"other-child": {ID: "other-child", Role: "patient", Enabled: true, BirthDate: now.AddDate(-12, 0, 0)},
+	}}
+	svc := &service.Service{Store: store, Now: func() time.Time { return now }}
+	mux := http.NewServeMux()
+	(&HTTP{Service: svc}).Register(mux)
+	headers := map[string]string{"X-Patient-Id": "rec-001", "X-User-Role": "reception"}
+	for _, adult := range []string{"unverified", "other-child", "child"} {
+		r := call(mux, "PATCH", "/patients/child/responsible", `{"responsiblePatientId":"`+adult+`"}`, headers)
+		if r.Code != 422 || store.byID["child"].ResponsibleID != "" {
+			t.Fatalf("invalid guardian %s was recorded: %d %s", adult, r.Code, r.Body)
+		}
+	}
+	r := call(mux, "PATCH", "/patients/child/responsible", `{"responsiblePatientId":"adult"}`, headers)
+	if r.Code != 200 || store.byID["child"].ResponsibleID != "adult" {
+		t.Fatalf("verified adult could not be recorded: %d %s", r.Code, r.Body)
+	}
+	r = call(mux, "PATCH", "/patients/adult/responsible", `{"responsiblePatientId":"adult"}`, headers)
+	if r.Code != 422 {
+		t.Fatal("adult was treated as minor")
+	}
+}

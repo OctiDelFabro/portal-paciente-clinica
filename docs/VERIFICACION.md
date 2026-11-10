@@ -21,7 +21,7 @@ La suite unitaria cubre contratos HTTP, autorización y habilitación, contacto 
 
 Las pruebas de integración con Docker cubren MySQL, RabbitMQ, MongoDB, Redis y OpenSearch. Se agregaron casos de publicación antes de que inicien los consumidores, listas con más de 100 cancelados que no deben ocultar un turno activo, tarifa persistida y motivo de 200 caracteres Unicode. Los fixtures de reserva usan días laborables, horarios de atención y pacientes conocidos/habilitados.
 
-El entorno de edición no dispone de Docker. **Compilación de integración no significa ejecución de integración.** `.github/workflows/verify.yml` ejecuta unitarias con detector de carreras, análisis Go, tests/build de React e integración real en GitHub Actions; consultar el resultado concreto del PR antes de integrar.
+El entorno de edición no dispone de Docker. **Compilación de integración no significa ejecución de integración.** `.github/workflows/verify.yml` ejecuta unitarias con detector de carreras, análisis Go, tests/build de React e integración real en GitHub Actions; consultar el resultado concreto del PR antes de integrar. En la ejecución [42893377415](https://github.com/OctiDelFabro/portal-paciente-clinica/actions/runs/42893377415), ninguno de los tres jobs llegó a iniciar: GitHub informó un bloqueo de cuenta por facturación. Los estados rojos de esa ejecución no son fallos de tests ejecutados.
 
 ## Recorrido manual con el stack local
 
