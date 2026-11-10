@@ -3,6 +3,9 @@
 # Las contrasenas llegan por variables de entorno desde .env; no se guardan en el repositorio.
 # MySQL ejecuta este script solo al inicializar un volumen vacio: con un volumen
 # existente hay que recrearlo (docker compose down -v) o crear los usuarios a mano.
+# Docker's MySQL entrypoint sources init scripts into its own shell. Isolate
+# strict-mode options so `set -u` cannot affect the entrypoint after this file.
+(
 set -eu
 
 # Duplica las comillas simples para que la contrasena sea un literal SQL valido.
@@ -24,3 +27,4 @@ CREATE USER IF NOT EXISTS 'medicos'@'%' IDENTIFIED BY '${MEDICOS_PW}';
 GRANT ALL PRIVILEGES ON medicos.* TO 'medicos'@'%';
 FLUSH PRIVILEGES;
 SQL
+)

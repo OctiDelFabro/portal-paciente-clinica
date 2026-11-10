@@ -61,7 +61,7 @@ API de Turnos: `POST /api/turnos/appointments`, `GET /api/turnos/appointments/{i
 - Contrato del mock de Notificaciones: `python scripts/check_contract.py`
 
 El mock en memoria sigue disponible para el grupo consumidor con `docker compose --profile mock up notifications-mock` (puerto 8086). Pacientes, Médicos e Historia clínica siguen como esqueletos con `/healthz`. Frontend: ver `frontend/README.md`.
-No existe despliegue público verificado ni URL de producción.
+Despliegue público de la capacidad Turnos (T11): `https://api-turnos.srv1779429.hstgr.cloud/v1`. El gateway publica `/healthz` y las rutas de partners `/v1/...` con `X-API-Key`; la aplicación frontend continúa siendo local y no forma parte de este despliegue. Ver [`odd/tasks/entrega-final.md`](odd/tasks/entrega-final.md) para evidencia y límites.
 
 ### Si cambiás contraseñas del `.env`
 Las contraseñas se aplican cuando se **crean** los contenedores y volúmenes, no cada vez que se levantan:

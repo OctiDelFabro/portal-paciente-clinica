@@ -19,7 +19,7 @@ Brief, section 6 "Presentacion Grupal" (quoted verbatim):
 - S13 — Load tests (2.11, ADR-013) with documented results; k6 before/after cache (ADR-007).
 - S14 — Provider: group "ArquitecturasoftwareRenewableEnergy", `POST /api/v1/estimaciones-consumo`, contract 1.0.1, `X-API-Key`. Returns kWh only; the cost in ARS is computed on our side with our own tariff. Consuming flow (L6): Turnos adds the energy cost of the consultation's equipment to the appointment price shown before confirming; on provider failure the booking proceeds with energy cost "pending".
 - Assumption A1: portal identity is our own: Pacientes issues JWT (HS256, `JWT_SECRET` from env), the gateway validates it. Documented in a new ADR-014.
-- Assumption A2: cloud target pending (Oracle E2.1.Micro or Azure for Students); fallback Cloudflare tunnel exposing only 8088.
+- Assumption A2: T11 is deployed on Hostinger VPS 1779429 (KVM 2) behind its existing Traefik HTTPS proxy; only the Turnos partner API is public, and the portal frontend is not part of this deployment.
 
 ## Tasks
 | ID | Specs | Route | Status | Commit / evidence |
@@ -35,7 +35,7 @@ Brief, section 6 "Presentacion Grupal" (quoted verbatim):
 | T8 | S5, S14 | delegated (parallel with T7) | done | 13e9592 — energy provider client + circuit breaker + quotes in Turnos + contract tests + provider stub; unit tests green |
 | T9 | S7, S13 | inline | done | k6 availability (99.7% hit rate, 775µs p50) & booking peak (2916 reqs, 62ms p95, 409/429 validated); documented in ADR-007 and ADR-013 |
 | T10 | S10, S11 | inline | done | ADR-004, ARCHITECTURE limitations, VERIFICACION, POSTMORTEM |
-| T11 | S4 | inline | blocked | cloud deploy (pending account) |
+| T11 | S4 | inline | done | Hostinger VPS 1779429; public HTTPS API `https://api-turnos.srv1779429.hstgr.cloud/v1`; `/healthz` verified 200 with trusted TLS; full Compose stack running |
 | T12 | S1, S2 | inline | done | doctor accounts (role doctor in Pacientes), doctor agenda in Turnos, doctor-to-appointment authorization in Historia, portal routes fail closed without X-Patient-Id; full suite & live e2e verified |
 
 Route evidence: T1–T5 run as parallel writers (Writer trigger (a)): five independent units with disjoint edit surfaces under `services/<name>/**` and `gateway/**`, each several files and 100+ lines. Shared files (`compose.yaml`, `go.mod`, `docs/ARCHITECTURE.md`, `README.md`) are owned by the parent (T0, T6, T10).
@@ -55,6 +55,7 @@ Route evidence: T1–T5 run as parallel writers (Writer trigger (a)): five indep
 - L12 (2026-11-08): T9 completed. Automated load tests executed via `grafana/k6` in Compose network (`infra/k6/availability.js` and `infra/k6/booking-peak.js`). Measured before/after cache at 200 req/s (99.74% hit rate in Redis, 775µs p50 vs 1.05ms without cache, 99.7% reduction in MySQL queries). Peak booking load test under contention validated MySQL row locks, 201 Created on winners, 409 Conflict on overlapping slots, and 429 Too Many Requests on partner rate limit. Evidence documented in ADR-007 and ADR-013.
 - L13 (2026-11-08): T12 completed. Doctor accounts seeded (doc-001, doc-002) in Pacientes with role "doctor" and JWT issuance; Turnos added ListForDoctor/GetForDoctor/CancelForDoctor and closed fail-open advisory by requiring X-Patient-Id (401 on missing); Historia Clinica added doctor-to-appointment assignment authorization (403 if doctor != assigned doctor); Pacientes allows doctor role to read patient contacts for agenda; verified via unit tests, frontend build, and live Docker stack e2e execution.
 - L14 (2026-11-08): T10 completed. Finalized comprehensive ADR-004 (Control de concurrencia: pessimistic row locks, interval overlaps, OCC versioning, k6 empiric verification), ARCHITECTURE.md (component map update for Final Presentation and Section 8 accepted technical debt & known limitations S11), VERIFICACION.md (consolidated test matrix S10: Go unit/integration, frontend build, k6 cache/peak, gateway balancing/failover, provider circuit breaker), and POSTMORTEM.md (retrospective covering 5 major engineering incidents, root causes, and systemic preventions).
+- L15 (2026-11-10): T11 deployed to Hostinger VPS 1779429. Public Turnos partner API: `https://api-turnos.srv1779429.hstgr.cloud/v1`; `/healthz` returned 200 with TLS certificate validation, and unauthenticated `GET /v1/doctors` returned 401 as expected. Deployment uses existing Traefik HTTPS routing and preserves the VPS's pre-existing n8n and Traefik services. The Notifications container was also configured and started after supplying its missing API key. Full Compose stack is running; observed 4.4 GiB available RAM, 39 GiB disk free, and OpenSearch capped at 1.5 GiB. The React portal frontend is not deployed in this task.
 
 
 

@@ -1,0 +1,15 @@
+# Hostinger VPS overlay. Traefik already runs on the host and terminates HTTPS;
+# only the gateway's partner listener is routed through it.
+services:
+  gateway:
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: portal-paciente-clinica_default
+      traefik.http.routers.turnos-public.rule: "Host(`${TURNOS_PUBLIC_HOST:?Definir TURNOS_PUBLIC_HOST}`)"
+      traefik.http.routers.turnos-public.entrypoints: websecure
+      traefik.http.routers.turnos-public.tls.certresolver: letsencrypt
+      traefik.http.routers.turnos-public.service: turnos-public
+      traefik.http.services.turnos-public.loadbalancer.server.port: "8088"
+  opensearch:
+    # Keep its native/JVM memory bounded on the shared 8 GiB VPS.
+    mem_limit: 1536m
