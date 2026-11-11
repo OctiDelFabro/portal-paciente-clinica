@@ -6,6 +6,7 @@ import type {
   ClinicalHistory,
   ClinicalNote,
   Doctor,
+  NextAvailable,
   LoginResponse,
   Profile,
   Quote,
@@ -78,6 +79,11 @@ export const turnos = {
     request<Availability>(
       "GET",
       `/api/turnos/doctors/${enc(doctorId)}/availability?date=${enc(date)}`,
+    ),
+  nextAvailable: (doctorId: string) =>
+    request<NextAvailable>(
+      "GET",
+      `/api/turnos/doctors/${enc(doctorId)}/next-available`,
     ),
   quote: (doctorId: string, startAt: string) =>
     request<Quote>(

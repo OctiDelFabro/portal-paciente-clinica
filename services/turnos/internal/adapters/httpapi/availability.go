@@ -68,3 +68,28 @@ func WithInstance(instance string, next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// NextAvailableQuery is the authoritative first free slot of a doctor.
+type NextAvailableQuery interface {
+	NextAvailable(ctx context.Context, doctorID string) (*domain.Slot, error)
+}
+
+// RegisterNextAvailable exposes GET /doctors/{id}/next-available. The portal
+// shows this value in search results instead of the approximate one indexed by
+// Medicos, which ignores office hours (ADR-006). startAt is null when there is
+// no free slot within app.NextAvailableHorizonDays.
+func RegisterNextAvailable(mux *http.ServeMux, q NextAvailableQuery) {
+	mux.HandleFunc("GET /doctors/{id}/next-available", func(w http.ResponseWriter, r *http.Request) {
+		slot, err := q.NextAvailable(r.Context(), r.PathValue("id"))
+		if err != nil {
+			mapError(w, err)
+			return
+		}
+		out := map[string]any{"doctorId": r.PathValue("id"), "startAt": nil, "endAt": nil, "horizonDays": app.NextAvailableHorizonDays}
+		if slot != nil {
+			out["startAt"] = slot.StartAt.In(domain.ClinicZone).Format(time.RFC3339)
+			out["endAt"] = slot.EndAt.In(domain.ClinicZone).Format(time.RFC3339)
+		}
+		sendJSON(w, 200, out)
+	})
+}

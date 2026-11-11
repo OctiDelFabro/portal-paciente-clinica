@@ -76,7 +76,8 @@ func (p Profile) Validate() error {
 type Interval struct{ Start, End time.Time }
 
 // NextFree returns the first instant at or after from not covered by busy.
-// It ignores office hours, which belong to Turnos (see ADR-006 deviations).
+// It ignores office hours, which belong to Turnos (see ADR-006 deviations), so
+// it is only a sort key: the portal shows Turnos' GET /doctors/{id}/next-available.
 func NextFree(from time.Time, busy []Interval) time.Time {
 	sorted := append([]Interval(nil), busy...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Start.Before(sorted[j].Start) })

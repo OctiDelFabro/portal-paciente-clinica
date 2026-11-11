@@ -167,6 +167,7 @@ func main() {
 	httpapi.Register(mux, svc)
 	httpapi.RegisterInternal(mux, svc, os.Getenv("INTERNAL_API_KEY"))
 	httpapi.RegisterAvailability(mux, query)
+	httpapi.RegisterNextAvailable(mux, svc)
 	(&httpapi.Partner{UseCases: svc, Keys: keys, Limiter: &apikey.Limiter{Rate: rate}, Price: price, Now: time.Now}).Register(mux)
 	mux.Handle("GET /metrics", obs.MetricsHandler())
 	mux.Handle("GET /healthz", httpapi.Health(store.DB.PingContext))
