@@ -232,6 +232,10 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Appointment, error
 // etiqueta de metricas (cardinalidad fija).
 func RejectReason(err error) string {
 	switch {
+	case errors.Is(err, domain.ErrMinorsNotAccepted):
+		return "minors_not_accepted"
+	case errors.Is(err, ErrForbidden), errors.Is(err, ErrPatientMismatch):
+		return "forbidden"
 	case errors.Is(err, domain.ErrLeadTime):
 		return "lead_time"
 	case errors.Is(err, domain.ErrOutsideSchedule):

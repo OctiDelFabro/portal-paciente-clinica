@@ -16,7 +16,7 @@ Base: `main` en `f9f228e` (PR #11). Rama: `fix/auditoria-funcional`. El informe 
 | RF-11 | Recepción registra y edita nombre, correo opcional, DNI y nacimiento; acceso inicial opcional con correo/contraseña. Verificación y vínculo siguen siendo decisiones explícitas. Búsqueda de pacientes por nombre/DNI/correo. |
 | RF-12 | Dos réplicas pueden generar recordatorios sin duplicar marcador/outbox. Notificaciones comprueba la reserva al consumir y antes de enviar un recordatorio. Avisos internos durables aun si falla la consulta de contactos; bandeja paginada y marca de lectura por dueño/responsable. |
 | Cotización fuera de agenda | Quote verifica agenda, anticipación, bloqueos y ocupación del médico. Sigue siendo una estimación, sin reservar ni garantizar ausencia de conflicto del paciente. |
-| Notas anticipadas | Backend rechaza notas de encuentros futuros con 422 `APPOINTMENT_NOT_STARTED`; botón de atención deshabilitado hasta el inicio. |
+| Notas anticipadas | Backend rechaza notas de encuentros futuros con 422 `APPOINTMENT_NOT_STARTED`; botón de atención deshabilitado hasta el inicio. La consulta de historia sigue disponible con un turno futuro válido. |
 | Selector de fechas | 60 días desde mañana en hora de Argentina, incluidos fines de semana configurados; fecha inicial sugerida por próximo libre. |
 | Orden entre páginas | El portal obtiene todos los resultados del filtro (máximo 1000), consulta Turnos con cuatro solicitudes concurrentes, ordena globalmente y recién pagina de a ocho. Errores de disponibilidad se muestran como desconocidos. |
 | Mensaje de habilitación | Banner de cuenta pendiente, actualización de estado y error clínico `PATIENT_NOT_ENABLED`. |
@@ -63,7 +63,7 @@ Todas estas rutas pasan por JWT en el gateway. Prefijos: `/api/turnos`, `/api/pa
 
 Unitarias: permisos y revocación del responsable, rechazo de menores, reprogramación con conflicto/destino inválido, conservación de original/outbox, eventos de reemplazo, notas futuras, EOF JSON, métricas restringidas y validación HTTP del recordatorio. Cliente: serialización de filtros/objetivos y descarga del catálogo completo antes de paginar.
 
-Integración MySQL: unicidad concurrente y reparación de DNI anterior, agenda persistida/duración conservada, conflicto de horarios, reprogramación y rollback, bloqueo contra reserva concurrente, cancelación excepcional, levantamiento sin resurrección, dos generadores de recordatorios, aviso durable con directorio caído, replay sin duplicar, acceso de responsable y descarte de correo obsoleto. Se ejecutan con el resto de pruebas reales de RabbitMQ, MongoDB, OpenSearch y Redis.
+Integración MySQL: unicidad concurrente y reparación de DNI anterior, agenda persistida/duración conservada, conflicto de horarios, reprogramación y rollback, bloqueo contra reserva concurrente, cancelación excepcional, levantamiento sin resurrección, dos generadores de recordatorios, aviso durable con directorio caído, replay sin duplicar, acceso de responsable y descarte de correo obsoleto. Se ejecutan con el resto de pruebas reales de RabbitMQ, MongoDB, OpenSearch y Redis. Dos consumidores externos de Notificaciones prueban aceptación, replay, conflicto y aislamiento; el trabajador entrega sus dos correos por SMTP a un Mailpit aislado y se comprueba el buzón.
 
 Chromium recorre la SPA compilada con HTTP simulado: paciente pendiente/habilitado, reserva/reprogramación/cancelación, menor, avisos, agenda/notas/horarios/bloqueos del médico, edición/asignación por recepción y perfil administrativo. Incluye viewport de 390 px. Estas pruebas no equivalen a una auditoría del VPS.
 
@@ -74,8 +74,10 @@ En el entorno de edición pasaron Go con detector de carreras, `go vet`, tests d
 Esta entrega no modifica el VPS. El responsable del despliegue debe actualizar también **Pacientes, Médicos, Historia Clínica y Notificaciones**, además de las dos réplicas de Turnos, gateway y frontend. El comando del parche anterior limitado a Turnos/gateway ya no alcanza:
 
 ```sh
+git switch main
 git pull --ff-only origin main
-docker compose -f compose.yaml -f compose.hostinger.yaml up -d --build pacientes medicos historia-clinica notifications turnos-1 turnos-2 gateway
+docker compose -f compose.yaml -f compose.hostinger.yaml up -d --build pacientes medicos historia-clinica notifications
+docker compose -f compose.yaml -f compose.hostinger.yaml up -d --build turnos-1 turnos-2 gateway
 cd frontend
 npm ci
 npm run build

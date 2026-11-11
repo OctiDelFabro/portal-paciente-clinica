@@ -167,65 +167,72 @@ function AgendaRow({
         </td>
         <td className="board__action">
           {a.status === "booked" ? (
-            <button
-              type="button"
-              className="btn btn--secondary btn--small"
-              disabled={Date.parse(a.startAt) > Date.now()}
-              title={
-                Date.parse(a.startAt) > Date.now()
-                  ? "Disponible a partir del inicio del turno"
-                  : undefined
-              }
-              aria-expanded={open}
-              onClick={onToggle}
-            >
-              {open ? "Cerrar" : "Registrar atención"}
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={() => setShowHistory(!showHistory)}
+              >
+                {showHistory
+                  ? "Ocultar historia"
+                  : "Consultar historia clínica"}
+              </button>
+
+              <button
+                type="button"
+                className="btn btn--secondary btn--small"
+                disabled={Date.parse(a.startAt) > Date.now()}
+                title={
+                  Date.parse(a.startAt) > Date.now()
+                    ? "Disponible a partir del inicio del turno"
+                    : undefined
+                }
+                aria-expanded={open}
+                onClick={onToggle}
+              >
+                {open ? "Cerrar" : "Registrar atención"}
+              </button>
+            </>
           ) : null}
         </td>
       </tr>
-      {open ? (
+      {a.status === "booked" && (open || showHistory) ? (
         <tr className="board__drawer">
           <td colSpan={6}>
-            <button
-              type="button"
-              className="btn btn--ghost"
-              onClick={() => setShowHistory(!showHistory)}
-            >
-              {showHistory ? "Ocultar historia" : "Consultar historia clínica"}
-            </button>
             {showHistory ? <HistoryScreen patientId={a.patientId} /> : null}
-            <form className="note-form" onSubmit={submit}>
-              <div className="field field--grow">
-                <label htmlFor={`note-${a.id}`}>Nota de la atención</label>
-                <textarea
-                  id={`note-${a.id}`}
-                  rows={4}
-                  maxLength={4000}
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  aria-describedby={`note-count-${a.id}`}
-                  autoFocus
-                />
-                <p id={`note-count-${a.id}`} className="field__hint num">
-                  {text.length} / 4000
-                </p>
-              </div>
-              {error ? (
-                <p className="form__error" role="alert">
-                  {error}
-                </p>
-              ) : null}
-              <div className="note-form__actions">
-                <button
-                  type="submit"
-                  className="btn btn--primary"
-                  disabled={busy || text.trim() === ""}
-                >
-                  {busy ? "Guardando…" : "Guardar nota"}
-                </button>
-              </div>
-            </form>
+            {open ? (
+              <form className="note-form" onSubmit={submit}>
+                <div className="field field--grow">
+                  <label htmlFor={`note-${a.id}`}>Nota de la atención</label>
+                  <textarea
+                    id={`note-${a.id}`}
+                    rows={4}
+                    maxLength={4000}
+                    value={text}
+                    onChange={(e) => setText(e.target.value)}
+                    aria-describedby={`note-count-${a.id}`}
+                    autoFocus
+                  />
+                  <p id={`note-count-${a.id}`} className="field__hint num">
+                    {text.length} / 4000
+                  </p>
+                </div>
+                {error ? (
+                  <p className="form__error" role="alert">
+                    {error}
+                  </p>
+                ) : null}
+                <div className="note-form__actions">
+                  <button
+                    type="submit"
+                    className="btn btn--primary"
+                    disabled={busy || text.trim() === ""}
+                  >
+                    {busy ? "Guardando…" : "Guardar nota"}
+                  </button>
+                </div>
+              </form>
+            ) : null}
           </td>
         </tr>
       ) : null}

@@ -176,6 +176,11 @@ func parseClock(raw string) (time.Duration, error) {
 	if len(parts) != 2 || len(raw) != 5 {
 		return 0, domain.ErrInvalidAgenda
 	}
+	for _, i := range []int{0, 1, 3, 4} {
+		if raw[i] < '0' || raw[i] > '9' {
+			return 0, domain.ErrInvalidAgenda
+		}
+	}
 	h, e := strconv.Atoi(parts[0])
 	m, e2 := strconv.Atoi(parts[1])
 	if e != nil || e2 != nil || h < 0 || h > 24 || m < 0 || m > 59 || (h == 24 && m != 0) {
@@ -184,6 +189,9 @@ func parseClock(raw string) (time.Duration, error) {
 	return time.Duration(h)*time.Hour + time.Duration(m)*time.Minute, nil
 }
 func (d scheduleDTO) agenda(id string) (domain.Agenda, error) {
+	if d.DurationMinutes < 5 || d.DurationMinutes > 240 {
+		return domain.Agenda{}, domain.ErrInvalidAgenda
+	}
 	open, e := parseClock(d.Open)
 	close, e2 := parseClock(d.Close)
 	v := domain.Agenda{DoctorID: id, Duration: time.Duration(d.DurationMinutes) * time.Minute, Schedule: domain.Schedule{Weekdays: d.Weekdays, Open: open, Close: close}}

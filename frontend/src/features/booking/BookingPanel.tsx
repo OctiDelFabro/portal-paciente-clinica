@@ -130,7 +130,7 @@ export function BookingPanel({
       setIssued(appointment);
       onBooked(appointment);
     } catch (err) {
-      setProblem(bookingProblem(err));
+      setProblem(bookingProblem(err, !!reschedule));
       if (err instanceof ApiError && err.status === 409)
         setReload((n) => n + 1);
     } finally {
@@ -352,7 +352,10 @@ function tooSoon(s: Slot): boolean {
   return new Date(s.startAt).getTime() - Date.now() < NOTICE_MS;
 }
 
-function bookingProblem(err: unknown): {
+function bookingProblem(
+  err: unknown,
+  rescheduling = false,
+): {
   tone: "alert" | "error";
   title: string;
   text: string;
@@ -363,29 +366,37 @@ function bookingProblem(err: unknown): {
       title: "No pudimos reservar",
       text: "Intentá de nuevo.",
     };
+  if (err.code === "ALREADY_CANCELLED")
+    return {
+      tone: "alert",
+      title: "El turno original está cancelado",
+      text: "Actualizá la lista de turnos antes de intentar otra operación.",
+    };
   if (err.status === 409)
     return {
       tone: "alert",
-      title: "Ese horario se acaba de ocupar",
-      text: "Otra persona lo reservó antes. Actualizamos la lista: elegí otro horario.",
+      title: "Ese horario ya no está disponible",
+      text: rescheduling
+        ? "No se aplicó el cambio. Tu turno original continúa vigente; elegí otro horario."
+        : "El horario se ocupó, fue bloqueado o se superpone con otro turno tuyo. Actualizamos la lista: elegí otro horario.",
+    };
+  if (err.code === "PATIENT_NOT_ENABLED")
+    return {
+      tone: "alert",
+      title: "Paciente pendiente de habilitación",
+      text: "Recepción debe verificar y habilitar al paciente antes de reservar.",
     };
   if (err.status === 403)
     return {
       tone: "alert",
-      title: "Tu cuenta todavía no está habilitada",
-      text: "Recepción tiene que verificar tus datos antes de que puedas reservar.",
+      title: "No tenés permiso para esta operación",
+      text: err.message,
     };
-  if (err.status === 504)
+  if (err.unavailable || err.status === 504)
     return {
       tone: "alert",
-      title: "No sabemos si el turno quedó reservado",
-      text: "El servicio tardó demasiado. Revisá «Mis turnos» antes de volver a intentar.",
-    };
-  if (err.unavailable)
-    return {
-      tone: "alert",
-      title: "El servicio de turnos no responde",
-      text: "Probá de nuevo en unos segundos.",
+      title: "No pudimos confirmar el resultado",
+      text: "Revisá la lista de turnos antes de volver a intentar. La operación podría haberse completado.",
     };
   if (err.status === 429)
     return {

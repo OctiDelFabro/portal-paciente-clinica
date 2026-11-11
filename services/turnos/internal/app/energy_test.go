@@ -240,3 +240,24 @@ func TestConfirmedTariffSurvivesConfigurationChange(t *testing.T) {
 		t.Fatalf("confirmed price changed: %+v", p)
 	}
 }
+
+func TestPendingEnergyUsesBookedDurationAfterScheduleChanges(t *testing.T) {
+	est := &fakeEstimator{err: ErrEnergyUnavailable}
+	svc, store := newEnergyService(t, est)
+	ctx := context.Background()
+	a, err := svc.Book(ctx, "p-1", "d-1", slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The persisted appointment may have a different duration than the initial directory default.
+	a.EndAt = a.StartAt.Add(45 * time.Minute)
+	store.rows[a.ID] = a
+	est.err = nil
+	est.microKWh = 1
+	if n := svc.ReestimatePending(ctx, 10); n != 1 {
+		t.Fatalf("reestimated %d", n)
+	}
+	if got := est.calls[len(est.calls)-1].Hours; got != 0.75 {
+		t.Fatalf("estimated using current/default duration: %v", got)
+	}
+}

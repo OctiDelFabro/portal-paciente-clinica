@@ -83,6 +83,9 @@ let expectedTarget = "pat-new",
   scheduleSaved = false,
   noticeRead = false,
   profileEdited = false;
+let rejectRescheduleOnce = true;
+let patientCreated = false,
+  linkSaved = false;
 let schedule = {
     doctorId: doctor.id,
     durationMinutes: 30,
@@ -256,6 +259,13 @@ await page.route("**/api/**", async (route) => {
       nextPage: 0,
     });
   if (path.endsWith("/reschedule")) {
+    if (rejectRescheduleOnce) {
+      rejectRescheduleOnce = false;
+      return json(
+        { error: { code: "SLOT_UNAVAILABLE", message: "Horario ocupado" } },
+        409,
+      );
+    }
     seenReschedule = true;
     appointment = {
       ...appointment,
@@ -299,6 +309,16 @@ await page.route("**/api/**", async (route) => {
         },
       ],
     });
+  if (path === "/api/pacientes/patients" && req.method() === "POST") {
+    patientCreated = true;
+    return json({ ...req.postDataJSON(), patientId: "staff-new" }, 201);
+  }
+  if (path.endsWith("/responsible")) {
+    linkSaved = true;
+    return json({
+      responsiblePatientId: req.postDataJSON().responsiblePatientId,
+    });
+  }
   if (path === "/api/pacientes/patients")
     return json({ patients: [patient(), child()], page: 1, nextPage: 0 });
   if (path === "/api/pacientes/patients/pat-new" && req.method() === "PUT") {
@@ -358,6 +378,17 @@ try {
   await page
     .getByRole("button", { name: "Confirmar reprogramación", exact: true })
     .click();
+  await page
+    .getByText(
+      "No se aplicó el cambio. Tu turno original continúa vigente; elegí otro horario.",
+      { exact: true },
+    )
+    .waitFor();
+  await page.locator("label.slot").click();
+  await page
+    .getByRole("button", { name: "Confirmar reprogramación", exact: true })
+    .click();
+
   await page
     .getByRole("button", { name: "Confirmar reprogramación", exact: true })
     .waitFor({ state: "hidden" });
@@ -421,6 +452,15 @@ try {
       .getByRole("button", { name: "Registrar atención", exact: true })
       .isDisabled(),
   );
+  await page
+    .getByRole("button", { name: "Consultar historia clínica", exact: true })
+    .click();
+  await page
+    .getByRole("heading", { name: "Historia clínica", exact: true })
+    .waitFor();
+  await page
+    .getByRole("button", { name: "Ocultar historia", exact: true })
+    .click();
   appointment = {
     ...appointment,
     startAt: new Date(Date.now() - 3600000).toISOString(),
@@ -498,6 +538,7 @@ try {
     .click();
   await page
     .getByLabel("Nombre y apellido", { exact: true })
+    .last()
     .fill("Nombre corregido");
   await page
     .getByRole("button", { name: "Guardar paciente", exact: true })
@@ -530,6 +571,31 @@ try {
     .getByRole("heading", { name: "Turno confirmado", exact: true })
     .waitFor();
   checks.push("reception edits patient and assigns reservation");
+  await page.getByText("Registrar un paciente", { exact: true }).click();
+  await page
+    .getByLabel("Nombre y apellido", { exact: true })
+    .fill("Ficha nueva");
+  await page.getByLabel("DNI del paciente", { exact: true }).fill("33445566");
+  await page
+    .getByLabel("Fecha de nacimiento del paciente", { exact: true })
+    .fill("1990-01-01");
+  await page
+    .getByRole("button", { name: "Guardar paciente", exact: true })
+    .click();
+  await page.getByText("Paciente registrado.", { exact: true }).waitFor();
+  assert.ok(patientCreated);
+  await page.getByLabel("Menor", { exact: true }).selectOption("pat-child");
+  await page
+    .getByLabel("Adulto responsable verificado", { exact: true })
+    .selectOption("pat-new");
+  await page
+    .getByRole("button", { name: "Registrar vínculo verificado", exact: true })
+    .click();
+  await page
+    .getByText("Vínculo verificado actualizado.", { exact: true })
+    .waitFor();
+  assert.ok(linkSaved);
+  checks.push("reception registers patient and verifies guardian link");
   await logout();
   await login("admin");
   await page.getByLabel("Identificador del profesional").fill("doc-001");

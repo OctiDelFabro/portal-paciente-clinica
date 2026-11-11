@@ -142,6 +142,8 @@ func (s *Service) ReestimatePending(ctx context.Context, limit int) int {
 		if a.Tariff != nil {
 			tariff = *a.Tariff
 		}
+		// A later schedule edit must not reprice a saved reservation using its new duration.
+		doctor.Duration = a.EndAt.Sub(a.StartAt)
 		e := s.estimateAt(ctx, doctor, ReestimateBudget, tariff)
 		if err := s.Store.SaveEnergy(ctx, a.ID, e, now); err != nil {
 			slog.WarnContext(ctx, "energy estimate not saved", "event", "energy.save_failed", "appointment_id", a.ID, "error", err.Error())
