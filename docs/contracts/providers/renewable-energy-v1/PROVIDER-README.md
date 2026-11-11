@@ -1,6 +1,6 @@
 # Capacidad pública: estimación de consumo
 
-Proyecto: ArquitecturasoftwareRenewableEnergy. Proveedor: servicio Consumo, publicado a través del gateway. Contrato 1.0.1; ruta mayor /v1. Estado: implementación real Go operativa en el sistema local de entrega 2; URL cloud pendiente. El mock histórico sigue disponible por separado.
+Proyecto: ArquitecturasoftwareRenewableEnergy. Proveedor: servicio Consumo, publicado a través del gateway. Contrato 1.0.1; ruta mayor /v1. Estado: implementación real Go desplegada en Render Free, URL base `https://renewable-consumo-v1.onrender.com` (entrega del proveedor del 09/11/2026; reemplaza a Cloudflare, contrato 1.0.1 sin cambios). Las claves M2M se reciben por canal privado y se cargan solo en el `.env` del backend (`PROVIDER_ENERGY_URL`, `PROVIDER_ENERGY_API_KEY`). El servicio puede suspenderse por inactividad y tardar 50 s o más en despertar. El mock histórico sigue disponible por separado.
 
 ## Contrato formal
 
@@ -14,7 +14,7 @@ Otro grupo envía equipos y hábitos para utilizar el consumo calculado en una c
 
 POST /api/v1/estimaciones-consumo. Content-Type: application/json. Header X-API-Key: credencial M2M que el equipo proveedor entregará por un canal privado. X-Request-Id es opcional para correlación, con hasta 64 letras, números, guion o guion bajo; no es clave de idempotencia.
 
-Sistema real local: http://localhost:8080 después de ejecutar Compose. Mock histórico opcional: http://localhost:8081 con el perfil mock; no es una URL productiva. URL HTTPS cloud: pendiente de publicar. No se incluyen claves reales. Un cliente sin clave válida recibe 401; autenticado sin permiso estimar-consumo recibe 403. El gateway aplicará inicialmente 60 solicitudes/minuto por cliente con ráfaga de hasta 10, ajustable mediante acuerdo documentado. Máximo cuerpo: 256 KiB; máximo 100 equipos.
+Sistema real local: http://localhost:8080 después de ejecutar Compose. Mock histórico opcional: http://localhost:8081 con el perfil mock; no es una URL productiva. URL HTTPS cloud: https://renewable-consumo-v1.onrender.com (Render Free). No se incluyen claves reales. Un cliente sin clave válida recibe 401; autenticado sin permiso estimar-consumo recibe 403. El gateway aplicará inicialmente 60 solicitudes/minuto por cliente con ráfaga de hasta 10, ajustable mediante acuerdo documentado. Máximo cuerpo: 256 KiB; máximo 100 equipos.
 
 ## Entrada
 
