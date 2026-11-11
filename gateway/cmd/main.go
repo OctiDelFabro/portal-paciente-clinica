@@ -73,11 +73,28 @@ func (c config) routes() *http.ServeMux {
 	mux.HandleFunc("/api/pacientes/internal/", func(w http.ResponseWriter, r *http.Request) { sendError(w, 404, "NOT_FOUND", "Ruta inexistente.") })
 	mux.Handle("/api/pacientes/", c.portal("pacientes", protected, pacientes))
 	medicos := proxy("medicos", c.medicos, "/api/medicos")
-	mux.Handle("GET /api/medicos/", c.portal("medicos", open, medicos))
+	for _, path := range []string{"GET /api/medicos/search", "GET /api/medicos/specialties", "GET /api/medicos/doctors/{id}"} {
+		mux.Handle(path, c.portal("medicos", open, medicos))
+	}
 	mux.Handle("/api/medicos/", c.portal("medicos", protected, medicos))
 	mux.HandleFunc("/api/turnos/internal/", func(w http.ResponseWriter, r *http.Request) { sendError(w, 404, "NOT_FOUND", "Ruta inexistente.") })
 	mux.Handle("/api/turnos/", c.portal("turnos", protected, poolProxy(c.turnos, "/api/turnos")))
 	mux.Handle("/api/historia/", c.portal("historia", protected, proxy("historia", c.historia, "/api/historia")))
+	mux.Handle("/api/notifications/", c.portal("notifications", protected, proxy("notifications", c.notifications, "/api/notifications")))
+	for _, svc := range []struct {
+		name    string
+		handler http.Handler
+	}{{"pacientes", pacientes}, {"medicos", medicos}, {"turnos", poolProxy(c.turnos, "/api/turnos")}, {"historia", proxy("historia", c.historia, "/api/historia")}, {"notifications", proxy("notifications", c.notifications, "/api/notifications")}} {
+		h := svc.handler
+		mux.Handle("GET /api/"+svc.name+"/metrics", c.portal(svc.name, protected, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			id, _ := identityFrom(r.Context())
+			if id.role != "admin" {
+				sendError(w, 403, "FORBIDDEN", "Se requiere administración.")
+				return
+			}
+			h.ServeHTTP(w, r)
+		})))
+	}
 	mux.Handle("GET /metrics", obs.MetricsHandler())
 	c.mountPublic(mux)
 	return mux

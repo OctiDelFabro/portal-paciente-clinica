@@ -45,8 +45,19 @@ type Quote struct {
 // Quote prices a consultation of doctorID at startAt. A provider failure is
 // not an error: the energy cost is pending and the total is the base price.
 func (s *Service) Quote(ctx context.Context, doctorID string, startAt time.Time) (Quote, error) {
-	doctor, err := s.Directory.Doctor(ctx, doctorID)
+	doctor, err := s.doctor(ctx, doctorID)
 	if err != nil {
+		return Quote{}, err
+	}
+	existing, err := s.Store.ActiveForDoctor(ctx, doctorID, startAt, startAt.Add(doctor.Duration))
+	if err != nil {
+		return Quote{}, err
+	}
+	blocks, err := s.blocks(ctx, doctorID, startAt, startAt.Add(doctor.Duration))
+	if err != nil {
+		return Quote{}, err
+	}
+	if _, err := domain.Book("quote", domain.Patient{Enabled: true}, doctor, startAt, s.Now(), domain.WithBlocks(existing, blocks)); err != nil {
 		return Quote{}, err
 	}
 	e := s.estimate(ctx, doctor, s.inlineBudget())
@@ -131,6 +142,8 @@ func (s *Service) ReestimatePending(ctx context.Context, limit int) int {
 		if a.Tariff != nil {
 			tariff = *a.Tariff
 		}
+		// A later schedule edit must not reprice a saved reservation using its new duration.
+		doctor.Duration = a.EndAt.Sub(a.StartAt)
 		e := s.estimateAt(ctx, doctor, ReestimateBudget, tariff)
 		if err := s.Store.SaveEnergy(ctx, a.ID, e, now); err != nil {
 			slog.WarnContext(ctx, "energy estimate not saved", "event", "energy.save_failed", "appointment_id", a.ID, "error", err.Error())

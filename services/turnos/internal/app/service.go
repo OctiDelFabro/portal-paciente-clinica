@@ -107,7 +107,7 @@ func (s *Service) Book(ctx context.Context, patientID, doctorID string, startAt 
 // misma clave gano, se devuelve su turno (replayed) en lugar de crear otro.
 // Authentication never substitutes for verification in the patient directory.
 func (s *Service) book(ctx context.Context, patientID, doctorID string, startAt time.Time, partner *PartnerBooking, authenticated bool) (domain.Appointment, bool, error) {
-	doctor, err := s.Directory.Doctor(ctx, doctorID)
+	doctor, err := s.doctor(ctx, doctorID)
 	if err != nil {
 		return domain.Appointment{}, false, err
 	}
@@ -140,11 +140,16 @@ func (s *Service) book(ctx context.Context, patientID, doctorID string, startAt 
 				return err
 			}
 		}
+		doctor, blocks, err := s.agendaInTx(ctx, tx, doctor, startAt, startAt.Add(doctor.Duration), nil)
+		if err != nil {
+			return err
+		}
 		end := startAt.Add(doctor.Duration)
 		existing, err := tx.FindActiveOverlapping(ctx, doctorID, patientID, startAt, end)
 		if err != nil {
 			return err
 		}
+		existing = append(existing, blocks...)
 		booked, err = domain.Book(s.NewID(), patient, doctor, startAt, s.Now(), existing)
 		if err != nil {
 			return err
@@ -175,6 +180,7 @@ func (s *Service) book(ctx context.Context, patientID, doctorID string, startAt 
 		slog.InfoContext(ctx, "appointment booked", "event", "appointment.booked", "appointment_id", booked.ID, "doctor_id", doctorID)
 		if partner == nil {
 			// After commit: the provider call never runs under the booking lock.
+			doctor.Duration = booked.EndAt.Sub(booked.StartAt)
 			booked = s.priceBooking(ctx, booked, doctor)
 		}
 	}
@@ -183,12 +189,19 @@ func (s *Service) book(ctx context.Context, patientID, doctorID string, startAt 
 
 // Cancel cancela un turno respetando la anticipacion minima.
 func (s *Service) Cancel(ctx context.Context, id, reason string) (domain.Appointment, error) {
+	snapshot, err := s.Store.Get(ctx, id)
+	if err != nil {
+		return domain.Appointment{}, err
+	}
 	if reason == "" {
 		// El esquema exige reasonCode en turnos.cancelado.v1.
 		reason = "patient_request"
 	}
 	var cancelled domain.Appointment
-	err := s.Store.InTx(ctx, func(tx Tx) error {
+	err = s.Store.InTx(ctx, func(tx Tx) error {
+		if err := tx.LockResources(ctx, DoctorKey(snapshot.DoctorID), PatientKey(snapshot.PatientID)); err != nil {
+			return err
+		}
 		current, err := tx.GetForUpdate(ctx, id)
 		if err != nil {
 			return err
@@ -219,6 +232,10 @@ func (s *Service) Get(ctx context.Context, id string) (domain.Appointment, error
 // etiqueta de metricas (cardinalidad fija).
 func RejectReason(err error) string {
 	switch {
+	case errors.Is(err, domain.ErrMinorsNotAccepted):
+		return "minors_not_accepted"
+	case errors.Is(err, ErrForbidden), errors.Is(err, ErrPatientMismatch):
+		return "forbidden"
 	case errors.Is(err, domain.ErrLeadTime):
 		return "lead_time"
 	case errors.Is(err, domain.ErrOutsideSchedule):
@@ -251,6 +268,10 @@ type eventEnvelope struct {
 }
 
 type eventData struct {
+	PreviousTurnID     string `json:"previousTurnId,omitempty"`
+	PreviousStartAt    string `json:"previousStartAt,omitempty"`
+	PreviousEndAt      string `json:"previousEndAt,omitempty"`
+	Operation          string `json:"operation,omitempty"`
 	TurnID             string `json:"turnId"`
 	PatientID          string `json:"patientId"`
 	DoctorID           string `json:"doctorId"`
@@ -260,7 +281,12 @@ type eventData struct {
 	ReasonCode         string `json:"reasonCode,omitempty"`
 }
 
-func (s *Service) event(ctx context.Context, routingKey string, a domain.Appointment) OutboxMessage {
+type eventOptions struct {
+	Operation string
+	Previous  *domain.Appointment
+}
+
+func (s *Service) event(ctx context.Context, routingKey string, a domain.Appointment, options ...eventOptions) OutboxMessage {
 	correlation := obs.CorrelationID(ctx)
 	if correlation == "" {
 		correlation = s.NewID()
@@ -271,6 +297,14 @@ func (s *Service) event(ctx context.Context, routingKey string, a domain.Appoint
 		Data: eventData{TurnID: a.ID, PatientID: a.PatientID, DoctorID: a.DoctorID,
 			StartAt: a.StartAt.Format(time.RFC3339), EndAt: a.EndAt.Format(time.RFC3339),
 			AppointmentVersion: a.Version, ReasonCode: a.CancelReason},
+	}
+	if len(options) > 0 {
+		env.Data.Operation = options[0].Operation
+		if previous := options[0].Previous; previous != nil {
+			env.Data.PreviousTurnID = previous.ID
+			env.Data.PreviousStartAt = previous.StartAt.Format(time.RFC3339)
+			env.Data.PreviousEndAt = previous.EndAt.Format(time.RFC3339)
+		}
 	}
 	payload, _ := json.Marshal(env)
 	// Se guarda el contexto de traza para que el publicador asincrono continue la misma traza.

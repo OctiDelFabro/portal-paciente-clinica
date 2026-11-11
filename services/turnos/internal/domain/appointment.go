@@ -20,13 +20,15 @@ const (
 )
 
 var (
-	ErrLeadTime         = errors.New("lead time shorter than 24 hours")
-	ErrOverlap          = errors.New("slot overlaps an active appointment of the doctor or the patient")
-	ErrAlreadyCancelled = errors.New("appointment already cancelled")
-	ErrPatientNotActive = errors.New("patient not enabled by reception")
-	ErrOutsideSchedule  = errors.New("outside doctor schedule")
-	ErrInvalidReason    = errors.New("invalid cancellation reason")
-	ErrInvalidDuration  = errors.New("doctor has no valid appointment duration")
+	ErrLeadTime          = errors.New("lead time shorter than 24 hours")
+	ErrOverlap           = errors.New("slot overlaps an active appointment of the doctor or the patient")
+	ErrAlreadyCancelled  = errors.New("appointment already cancelled")
+	ErrPatientNotActive  = errors.New("patient not enabled by reception")
+	ErrOutsideSchedule   = errors.New("outside doctor schedule")
+	ErrInvalidReason     = errors.New("invalid cancellation reason")
+	ErrInvalidDuration   = errors.New("doctor has no valid appointment duration")
+	ErrMinorsNotAccepted = errors.New("doctor does not accept minors")
+	ErrBlocked           = errors.New("doctor agenda is blocked")
 )
 
 type Appointment struct {
@@ -56,21 +58,28 @@ type Doctor struct {
 	Duration time.Duration
 	Schedule Schedule
 	// Specialty selects the consultation equipment profile (energy.go).
-	Specialty string
+	Specialty     string
+	AcceptsMinors bool
 }
 
 // Patient reune el estado de habilitacion definido en RF-13.
 type Patient struct {
-	ID      string
-	Enabled bool
+	ID            string
+	Enabled       bool
+	BirthDate     time.Time
+	ResponsibleID string
+	Role          string
 }
 
 // Book valida una nueva reserva contra los turnos activos del medico y del
 // paciente que se superponen con el intervalo pedido. El llamador debe obtener
 // esos turnos bajo el bloqueo de ambos recursos para que la decision sea valida.
 func Book(id string, patient Patient, doctor Doctor, startAt, now time.Time, existing []Appointment) (Appointment, error) {
-	if !patient.Enabled {
+	if !patient.Enabled || (patient.Role != "" && patient.Role != "patient") {
 		return Appointment{}, ErrPatientNotActive
+	}
+	if !patient.BirthDate.IsZero() && patient.BirthDate.AddDate(18, 0, 0).After(now.In(ClinicZone)) && !doctor.AcceptsMinors {
+		return Appointment{}, ErrMinorsNotAccepted
 	}
 	if doctor.Duration <= 0 {
 		return Appointment{}, ErrInvalidDuration

@@ -132,7 +132,7 @@ func TestPublicListenerHidesPortalRoutes(t *testing.T) {
 	defer notif.Close()
 	mux := testConfig(t, []string{turnos.URL}, notif.URL).publicRoutes()
 	for _, path := range []string{"/api/turnos/appointments", "/api/turnos/appointments/a1", "/metrics",
-		"/api/pacientes/auth/login", "/api/pacientes/auth/register", "/api/medicos/doctors", "/api/historia/records"} {
+		"/api/pacientes/auth/login", "/api/pacientes/auth/register", "/api/medicos/search", "/api/historia/records"} {
 		for _, method := range []string{"GET", "POST"} {
 			rec := httptest.NewRecorder()
 			mux.ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader("{}")))

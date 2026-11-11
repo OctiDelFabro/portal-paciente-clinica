@@ -72,7 +72,9 @@ func main() {
 	}
 
 	svc := &service.Service{
-		Repo: repo, Contacts: contacts.HTTP{Patients: patientclient.New(env("PACIENTES_URL", "http://127.0.0.1:8082"), os.Getenv("INTERNAL_API_KEY"))}, Now: time.Now, NewID: obs.NewID, TTL: 24 * time.Hour,
+		Patients:     patientclient.New(env("PACIENTES_URL", "http://127.0.0.1:8082"), os.Getenv("INTERNAL_API_KEY")),
+		Appointments: service.NewAppointmentClient(env("TURNOS_URLS", "http://turnos-1:8081,http://turnos-2:8081"), os.Getenv("INTERNAL_API_KEY")),
+		Repo:         repo, Contacts: contacts.HTTP{Patients: patientclient.New(env("PACIENTES_URL", "http://127.0.0.1:8082"), os.Getenv("INTERNAL_API_KEY"))}, Now: time.Now, NewID: obs.NewID, TTL: 24 * time.Hour,
 		Mailer:  mailer.SMTP{Addr: env("SMTP_ADDR", "127.0.0.1:1025"), From: env("MAIL_FROM", "no-reply@portal-clinica.example.test")},
 		Breaker: &service.Breaker{Threshold: 5, Cooldown: 30 * time.Second},
 	}

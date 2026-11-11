@@ -13,11 +13,13 @@ import (
 )
 
 const (
-	Exchange      = "portal.events.v1"
-	DeadExchange  = "portal.events.dlx"
-	RoutingBooked = "turnos.reservado.v1"
-	RoutingCancel = "turnos.cancelado.v1"
-	correlationH  = "x-correlation-id"
+	Exchange           = "portal.events.v1"
+	DeadExchange       = "portal.events.dlx"
+	RoutingBooked      = "turnos.reservado.v1"
+	RoutingCancel      = "turnos.cancelado.v1"
+	RoutingRescheduled = "turnos.reprogramado.v1"
+	RoutingReminder    = "turnos.recordatorio.v1"
+	correlationH       = "x-correlation-id"
 )
 
 // headerCarrier adapta amqp.Table a la interfaz de propagacion de OpenTelemetry.

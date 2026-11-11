@@ -81,7 +81,7 @@ func Declare(ch *amqp.Channel) error {
 	}); err != nil {
 		return err
 	}
-	for _, key := range []string{messaging.RoutingBooked, messaging.RoutingCancel} {
+	for _, key := range []string{messaging.RoutingBooked, messaging.RoutingCancel, messaging.RoutingRescheduled} {
 		if err := ch.QueueBind(Queue, key, messaging.Exchange, false, nil); err != nil {
 			return err
 		}

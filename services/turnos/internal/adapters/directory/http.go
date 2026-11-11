@@ -37,7 +37,8 @@ func (d *HTTP) Patient(ctx context.Context, id string) (domain.Patient, error) {
 	if err != nil {
 		return domain.Patient{}, app.ErrDirectoryUnavailable
 	}
-	return domain.Patient{ID: p.PatientID, Enabled: p.Enabled && p.Role == "patient"}, nil
+	birth, _ := time.ParseInLocation(time.DateOnly, p.BirthDate, domain.ClinicZone)
+	return domain.Patient{ID: p.PatientID, Enabled: p.Enabled, BirthDate: birth, ResponsibleID: p.ResponsibleID, Role: p.Role}, nil
 }
 func (d *HTTP) Doctor(ctx context.Context, id string) (domain.Doctor, error) {
 	doctor, err := Agenda(ctx, id)
@@ -60,9 +61,10 @@ func (d *HTTP) Doctor(ctx context.Context, id string) (domain.Doctor, error) {
 		return domain.Doctor{}, app.ErrDirectoryUnavailable
 	}
 	var p struct {
-		ID          string   `json:"id"`
-		Active      bool     `json:"active"`
-		Specialties []string `json:"specialties"`
+		ID            string   `json:"id"`
+		Active        bool     `json:"active"`
+		Specialties   []string `json:"specialties"`
+		AcceptsMinors bool     `json:"acceptsMinors"`
 	}
 	if json.NewDecoder(io.LimitReader(resp.Body, 16384)).Decode(&p) != nil || p.ID != id {
 		return domain.Doctor{}, app.ErrDirectoryUnavailable
@@ -70,6 +72,7 @@ func (d *HTTP) Doctor(ctx context.Context, id string) (domain.Doctor, error) {
 	if !p.Active {
 		return domain.Doctor{}, app.ErrUnknownDoctor
 	}
+	doctor.AcceptsMinors = p.AcceptsMinors
 	if len(p.Specialties) > 0 && !slices.Contains(p.Specialties, doctor.Specialty) {
 		doctor.Specialty = p.Specialties[0]
 	}

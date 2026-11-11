@@ -1,9 +1,15 @@
 package repository
 
-import "context"
+import (
+	"context"
+	"database/sql"
+)
 
 func (r *Repo) ListPatients(ctx context.Context, pending bool, page int) ([]Patient, error) {
-	rows, err := r.DB.QueryContext(ctx, "SELECT "+columns+" FROM patients WHERE role = 'patient' AND (? = FALSE OR enabled = FALSE) ORDER BY created_at, id LIMIT 51 OFFSET ?", pending, (page-1)*50)
+	return r.SearchPatients(ctx, pending, page, "")
+}
+func (r *Repo) SearchPatients(ctx context.Context, pending bool, page int, q string) ([]Patient, error) {
+	rows, err := r.DB.QueryContext(ctx, "SELECT "+columns+" FROM patients WHERE role = 'patient' AND (? = FALSE OR enabled = FALSE) AND (?='' OR full_name LIKE ? OR document_key LIKE ? OR email LIKE ?) ORDER BY created_at, id LIMIT 51 OFFSET ?", pending, q, "%"+q+"%", "%"+q+"%", "%"+q+"%", (page-1)*50)
 	if err != nil {
 		return nil, err
 	}
@@ -22,8 +28,24 @@ func (r *Repo) ListPatients(ctx context.Context, pending bool, page int) ([]Pati
 	return out, rows.Err()
 }
 func (r *Repo) SetVerification(ctx context.Context, id string, enabled bool) error {
-	_, err := r.DB.ExecContext(ctx, "UPDATE patients SET enabled = ? WHERE id = ? AND role = 'patient'", enabled, id)
-	return err
+	tx, err := r.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if enabled {
+		var doc sql.NullString
+		if err := tx.QueryRowContext(ctx, `SELECT document_number FROM patients WHERE id=? AND role='patient'`, id).Scan(&doc); err != nil {
+			return err
+		}
+		if err := uniqueDocument(ctx, tx, doc.String, id); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE patients SET enabled = ? WHERE id = ? AND role = 'patient'", enabled, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 func (r *Repo) SetResponsible(ctx context.Context, id, responsible string) error {
 	_, err := r.DB.ExecContext(ctx, "UPDATE patients SET responsible_id = NULLIF(?, '') WHERE id = ? AND role = 'patient'", responsible, id)

@@ -52,6 +52,7 @@ func TestParseEventAcceptsBookingAndCancellation(t *testing.T) {
 
 // fakeStore records what the service asks the repository to do.
 type fakeStore struct {
+	startAt   time.Time
 	changes   []service.Change
 	duplicate bool
 	err       error
@@ -84,7 +85,7 @@ func (f *fakeStore) Encounter(_ context.Context, appointmentID string) (service.
 	if f.noteErr != nil {
 		return service.Encounter{}, f.noteErr
 	}
-	return service.Encounter{AppointmentID: appointmentID, DoctorID: "doc-001", Status: service.StatusScheduled}, nil
+	return service.Encounter{AppointmentID: appointmentID, DoctorID: "doc-001", StartAt: f.startAt, Status: service.StatusScheduled}, nil
 }
 
 func (f *fakeStore) Timeline(_ context.Context, patientID string) ([]service.Encounter, error) {
@@ -190,5 +191,20 @@ func TestTimelineAsksOnlyForTheRequestingPatient(t *testing.T) {
 	got, err := newService(store).Timeline(context.Background(), "pat-001")
 	if err != nil || len(got) != 1 || store.asked != "pat-001" {
 		t.Fatalf("got %+v %v asked=%q", got, err, store.asked)
+	}
+}
+
+func TestNoteCannotBeWrittenBeforeAppointmentStarts(t *testing.T) {
+	store := &fakeStore{startAt: fixedNow.Add(time.Minute)}
+	svc := newService(store)
+	if _, err := svc.AddNote(context.Background(), "t-1", "doc-001", "doctor", "Control"); !errors.Is(err, service.ErrTooEarly) {
+		t.Fatalf("future note: %v", err)
+	}
+	if len(store.notes) != 0 {
+		t.Fatal("future note persisted")
+	}
+	store.startAt = fixedNow
+	if _, err := svc.AddNote(context.Background(), "t-1", "doc-001", "doctor", "Control"); err != nil {
+		t.Fatalf("note at appointment start: %v", err)
 	}
 }

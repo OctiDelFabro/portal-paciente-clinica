@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -106,11 +107,96 @@ func TestConcurrentRegistrationSameEmailCreatesOnePatient(t *testing.T) {
 		switch {
 		case err == nil:
 			ok++
-		case !errors.Is(err, repository.ErrEmailTaken):
+		case !errors.Is(err, repository.ErrEmailTaken) && !errors.Is(err, repository.ErrDocumentTaken):
 			t.Fatalf("unexpected error %v", err)
 		}
 	}
 	if ok != 1 {
 		t.Fatalf("want exactly one registration, got %d", ok)
+	}
+}
+
+func TestUniqueDocumentConcurrentWritesAndLegacyRepair(t *testing.T) {
+	repo := startRepo(t)
+	svc := realService(t, repo)
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	errs := make([]error, 8)
+	for i := range errs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = svc.CreatePatient(ctx, service.PatientFields{FullName: "Persona", DocumentNumber: " ab123456 ", BirthDate: "1990-01-01"}, "", true)
+		}(i)
+	}
+	wg.Wait()
+	winners := 0
+	for _, err := range errs {
+		if err == nil {
+			winners++
+		} else if !errors.Is(err, repository.ErrDocumentTaken) {
+			t.Fatal(err)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("document uniqueness winners=%d", winners)
+	}
+	var id string
+	if err := repo.DB.QueryRow(`SELECT id FROM patients WHERE document_key='AB123456'`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate pre-migration duplicates: schema startup must preserve them and verification must reject until corrected.
+	_, err := repo.DB.Exec(`INSERT INTO patients(id,full_name,document_number,birth_date,enabled,created_at,role) VALUES('legacy','Duplicado','ab123456','1990-01-01',FALSE,NOW(),'patient')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetVerification(ctx, "legacy", true); !errors.Is(err, repository.ErrDocumentTaken) {
+		t.Fatalf("enabled unresolved duplicate: %v", err)
+	}
+	if _, err := svc.UpdatePatient(ctx, "legacy", service.PatientFields{FullName: "Corregido", DocumentNumber: "ZX123456", BirthDate: "1990-01-01"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetVerification(ctx, "legacy", true); err != nil {
+		t.Fatal(err)
+	}
+	found, err := repo.SearchPatients(ctx, false, 1, "ZX123456")
+	if err != nil || len(found) != 1 || found[0].ID != "legacy" {
+		t.Fatalf("search repaired patient: %+v %v", found, err)
+	}
+}
+
+func TestStaffManagementRoutesUseRealPatientRecords(t *testing.T) {
+	repo := startRepo(t)
+	svc := realService(t, repo)
+	mux := http.NewServeMux()
+	(&HTTP{Service: svc, Health: func() error { return nil }}).Register(mux)
+	fields := `{"fullName":"Ficha de prueba","documentNumber":"pv112233","birthDate":"1990-01-01","enabled":true}`
+	staff := map[string]string{"X-Patient-Id": "rec-001", "X-User-Role": "reception"}
+	patient := map[string]string{"X-Patient-Id": "pat-001", "X-User-Role": "patient"}
+	if w := call(mux, "POST", "/patients", fields, patient); w.Code != 403 {
+		t.Fatalf("patient created staff record: %d", w.Code)
+	}
+	w := call(mux, "POST", "/patients", fields, staff)
+	if w.Code != 201 {
+		t.Fatalf("staff create: %d %s", w.Code, w.Body)
+	}
+	var p struct {
+		ID string `json:"patientId"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil || p.ID == "" {
+		t.Fatal("patient envelope", err)
+	}
+	update := `{"fullName":"Ficha corregida","documentNumber":"PV112233","birthDate":"1990-01-01","email":"ficha@example.test"}`
+	if w := call(mux, "PUT", "/patients/"+p.ID, update, staff); w.Code != 200 {
+		t.Fatalf("staff update: %d %s", w.Code, w.Body)
+	}
+	if w := call(mux, "PUT", "/patients/"+p.ID, strings.Replace(update, `"email":`, `"role":"admin","email":`, 1), staff); w.Code != 400 {
+		t.Fatalf("role injection: %d", w.Code)
+	}
+	if w := call(mux, "GET", "/patients?q=PV112233", "", staff); w.Code != 200 || !strings.Contains(w.Body.String(), "Ficha corregida") {
+		t.Fatalf("staff search: %d %s", w.Code, w.Body)
+	}
+	if w := call(mux, "POST", "/patients", fields, staff); w.Code != 409 || !strings.Contains(w.Body.String(), "DOCUMENT_TAKEN") {
+		t.Fatalf("staff duplicate: %d %s", w.Code, w.Body)
 	}
 }

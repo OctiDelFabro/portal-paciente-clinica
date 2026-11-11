@@ -168,3 +168,13 @@ func TestReads(t *testing.T) {
 		t.Fatalf("reindex: %d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestUpdateRejectsTrailingJSONBeforeMutating(t *testing.T) {
+	for _, tail := range []string{` {}`, ` null`, ` garbage`} {
+		uc := &fakeUC{}
+		rec := serve(uc, "PUT", "/doctors/doc-001", "admin", profileBody+tail)
+		if rec.Code != 400 || uc.updated != 0 {
+			t.Fatalf("trailing %q: %d updates=%d", tail, rec.Code, uc.updated)
+		}
+	}
+}

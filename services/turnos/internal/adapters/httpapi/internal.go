@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"net/http"
+	"portal-paciente-clinica/services/turnos/internal/domain"
 )
 
 type RelationshipReader interface {
@@ -12,6 +13,23 @@ type RelationshipReader interface {
 }
 
 func RegisterInternal(mux *http.ServeMux, reader RelationshipReader, key string) {
+	if get, ok := reader.(interface {
+		Get(context.Context, string) (domain.Appointment, error)
+	}); ok {
+		mux.HandleFunc("GET /internal/appointments/{id}", func(w http.ResponseWriter, r *http.Request) {
+			expected, got := sha256.Sum256([]byte(key)), sha256.Sum256([]byte(r.Header.Get("X-Service-Key")))
+			if len(key) < 32 || subtle.ConstantTimeCompare(expected[:], got[:]) != 1 {
+				sendError(w, 401, "UNAUTHORIZED", "Service authentication required.")
+				return
+			}
+			a, e := get.Get(r.Context(), r.PathValue("id"))
+			if e != nil {
+				mapError(w, e)
+				return
+			}
+			sendJSON(w, 200, toDTO(a))
+		})
+	}
 	mux.HandleFunc("GET /internal/relationships", func(w http.ResponseWriter, r *http.Request) {
 		expected, got := sha256.Sum256([]byte(key)), sha256.Sum256([]byte(r.Header.Get("X-Service-Key")))
 		if len(key) < 32 || subtle.ConstantTimeCompare(expected[:], got[:]) != 1 {

@@ -12,7 +12,8 @@ export type View =
   | "appointments"
   | "history"
   | "agenda"
-  | "operations";
+  | "operations"
+  | "notifications";
 
 const ITEMS: Record<
   Role,
@@ -22,6 +23,7 @@ const ITEMS: Record<
     { view: "search", label: "Buscar médico", Icon: Search },
     { view: "appointments", label: "Mis turnos", Icon: CalendarClock },
     { view: "history", label: "Historia clínica", Icon: FileHeart },
+    { view: "notifications", label: "Avisos", Icon: ClipboardList },
   ],
   doctor: [{ view: "agenda", label: "Mi agenda", Icon: ClipboardList }],
   admin: [{ view: "operations", label: "Administración", Icon: ClipboardList }],

@@ -54,6 +54,7 @@ type HTTP struct {
 }
 
 func (h *HTTP) Register(mux *http.ServeMux) {
+	h.registerNotices(mux)
 	h.limiter = &apikey.Limiter{Rate: h.Rate}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		if err := h.Health(); err != nil {

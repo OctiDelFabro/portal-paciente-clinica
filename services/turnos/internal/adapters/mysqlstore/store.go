@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -303,14 +304,24 @@ func (t *mysqlTx) InsertPartnerBooking(ctx context.Context, pb app.PartnerBookin
 }
 
 func (s *Store) AppointmentsPage(ctx context.Context, patient, doctor string, page int, now time.Time) ([]domain.Appointment, bool, error) {
-	field, id := "patient_id", patient
-	if doctor != "" {
-		field, id = "doctor_id", doctor
+	clauses, args := []string{}, []any{}
+	if patient != "" {
+		clauses = append(clauses, "patient_id = ?")
+		args = append(args, patient)
 	}
-	rows, err := s.DB.QueryContext(ctx, "SELECT "+columns+" FROM appointments WHERE "+field+` = ?
+	if doctor != "" {
+		clauses = append(clauses, "doctor_id = ?")
+		args = append(args, doctor)
+	}
+	where := strings.Join(clauses, " AND ")
+	if where == "" {
+		where = "1=1"
+	}
+	args = append(args, now.UTC(), now.UTC(), app.PageSize+1, (page-1)*app.PageSize)
+	rows, err := s.DB.QueryContext(ctx, "SELECT "+columns+" FROM appointments WHERE "+where+`
  ORDER BY CASE WHEN status='booked' AND start_at>=? THEN 0 WHEN status='booked' THEN 1 ELSE 2 END,
  CASE WHEN status='booked' AND start_at>=? THEN start_at END ASC, start_at DESC, id
- LIMIT ? OFFSET ?`, id, now.UTC(), now.UTC(), app.PageSize+1, (page-1)*app.PageSize)
+ LIMIT ? OFFSET ?`, args...)
 	list, err := scanAll(rows, err)
 	if err != nil {
 		return nil, false, err

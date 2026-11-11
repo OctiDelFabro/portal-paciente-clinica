@@ -157,6 +157,7 @@ func main() {
 	keys, price, rate := partnerConfig()
 	svc.Store = store
 	svc.Price = price
+	go svc.RunReminders(ctx)
 	if energyEnabled {
 		// Retries pending estimates off the request path, 20 per minute at most.
 		go svc.RunEnergyReestimator(ctx, time.Minute, 20)

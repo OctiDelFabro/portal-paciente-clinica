@@ -98,7 +98,7 @@ func validPassword(password string) string {
 }
 
 func (s *Service) validate(in *RegisterInput) (time.Time, error) {
-	in.Email, in.FullName, in.DocumentNumber = normalizeEmail(in.Email), strings.TrimSpace(in.FullName), strings.TrimSpace(in.DocumentNumber)
+	in.Email, in.FullName, in.DocumentNumber = normalizeEmail(in.Email), strings.TrimSpace(in.FullName), strings.ToUpper(strings.TrimSpace(in.DocumentNumber))
 	if addr, err := mail.ParseAddress(in.Email); err != nil || addr.Address != in.Email || len(in.Email) > 254 {
 		return time.Time{}, &ValidationError{"email must be a plain address such as name@example.com"}
 	}
@@ -111,7 +111,7 @@ func (s *Service) validate(in *RegisterInput) (time.Time, error) {
 	if !documentPattern.MatchString(in.DocumentNumber) {
 		return time.Time{}, &ValidationError{"documentNumber must have 6 to 20 letters or digits"}
 	}
-	birth, err := time.Parse(time.DateOnly, in.BirthDate)
+	birth, err := time.ParseInLocation(time.DateOnly, in.BirthDate, clinicZone)
 	if err != nil || birth.After(s.Now()) {
 		return time.Time{}, &ValidationError{"birthDate must be a past date in YYYY-MM-DD format"}
 	}

@@ -26,7 +26,7 @@ Estos valores no fueron medidos. D10 revisará las políticas tras pruebas con d
 
 ## Eventos iniciales
 Exchange topic durable: portal.events.v1.
-Rutas iniciales: turnos.reservado.v1, turnos.cancelado.v1, turnos.reprogramado.v1 y turnos.recordatorio-solicitado.v1.
+Rutas vigentes: turnos.reservado.v1, turnos.cancelado.v1, turnos.reprogramado.v1 y turnos.recordatorio.v1.
 Contrato procesable: ../contracts/turnos-events-v1.schema.json.
 
 El sobre incluye eventId, eventType, version, occurredAt, correlationId y data. data contiene turnId, patientId, doctorId, startAt, endAt y appointmentVersion. Reprogramación agrega previousStartAt/previousEndAt; cancelación agrega reasonCode. No se incluyen historia clínica ni credenciales. Los contactos se resuelven por el contrato de Pacientes.
@@ -61,4 +61,6 @@ El mock implementa únicamente el contrato HTTP, con memoria e idempotencia dura
 - Tiempos del gateway: 5 s por solicitud, 2 s hacia el servicio, 500 ms de conexión, un reintento de GET con espera de 100–300 ms (`gateway/cmd/main_test.go`).
 - La traza y la correlación viajan en headers HTTP y AMQP y en la outbox (ADR-011).
 
-Pendiente: recordatorios 24 h antes (`turnos.recordatorio-solicitado.v1`), reprogramación y medición real de los tiempos (D13).
+Implementados reprogramación y recordatorio con outbox, consumidor e invalidación. Ver [reglas y límites](../AUDITORIA-FUNCIONAL-CORRECCIONES.md). La medición operativa de tiempos sigue pendiente (D13).
+
+Actualización 11/11/2026: el reemplazo usa un nuevo ID de reserva; el marcador de recordatorio es único por ese ID. El evento de reprogramación enlaza `previousTurnId`, `previousStartAt` y `previousEndAt`. Se genera cada minuto para turnos activos en las últimas 24 h; no se implementa la propuesta anterior de omitir el recordatorio del borde exacto.

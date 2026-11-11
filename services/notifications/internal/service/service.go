@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	"portal-paciente-clinica/internal/platform/obs"
+	"portal-paciente-clinica/internal/platform/patientclient"
 	"portal-paciente-clinica/services/notifications/internal/repository"
 )
 
@@ -56,6 +57,10 @@ type Contacts interface {
 }
 
 type Service struct {
+	Patients     *patientclient.Client
+	Appointments interface {
+		Current(context.Context, string, string) (bool, error)
+	}
 	Repo     *repository.Repo
 	Contacts Contacts
 	Mailer   Mailer
@@ -111,6 +116,7 @@ type Event struct {
 	OccurredAt    string `json:"occurredAt"`
 	CorrelationID string `json:"correlationId"`
 	Data          struct {
+		Operation          string `json:"operation"`
 		TurnID             string `json:"turnId"`
 		PatientID          string `json:"patientId"`
 		DoctorID           string `json:"doctorId"`
@@ -122,8 +128,10 @@ type Event struct {
 }
 
 var eventTemplates = map[string]struct{ template, notice string }{
-	"turnos.reservado.v1": {"operation-confirmed.v1", "appointment_booked"},
-	"turnos.cancelado.v1": {"operation-cancelled.v1", "appointment_cancelled"},
+	"turnos.reservado.v1":    {"operation-confirmed.v1", "appointment_booked"},
+	"turnos.cancelado.v1":    {"operation-cancelled.v1", "appointment_cancelled"},
+	"turnos.reprogramado.v1": {"operation-confirmed.v1", "appointment_rescheduled"},
+	"turnos.recordatorio.v1": {"operation-reminder.v1", "appointment_reminder"},
 }
 
 // ParseEvent valida el sobre. Un evento invalido no mejora con reintentos:
@@ -148,27 +156,48 @@ func ParseEvent(body []byte) (Event, error) {
 // duplicate=true indica que el evento ya habia sido procesado.
 func (s *Service) HandleEvent(ctx context.Context, e Event) (bool, error) {
 	mapping := eventTemplates[e.EventType]
+	now := s.Now().UTC()
+	if e.EventType == "turnos.cancelado.v1" && e.Data.Operation == "reschedule" {
+		return s.Repo.RecordEvent(ctx, e.EventID, e.EventType, now, nil, repository.Notice{TurnID: e.Data.TurnID})
+	}
+	if e.EventType == "turnos.recordatorio.v1" {
+		if s.Appointments == nil {
+			return false, errors.New("reminder authorization unavailable")
+		}
+		current, err := s.Appointments.Current(ctx, e.Data.TurnID, e.Data.StartAt)
+		if err != nil {
+			return false, err
+		}
+		if !current {
+			return s.Repo.RecordEvent(ctx, e.EventID, e.EventType, now, nil, repository.Notice{})
+		}
+	}
+	start, _ := time.Parse(time.RFC3339, e.Data.StartAt)
+	notice := repository.Notice{ID: e.EventID, PatientID: e.Data.PatientID, TurnID: e.Data.TurnID, Kind: mapping.notice, DoctorID: e.Data.DoctorID, StartAt: &start, Reason: e.Data.ReasonCode}
+	// An unavailable contact directory must never delay the internal notice.
+	if err := s.Repo.EnsureNotice(ctx, notice, now); err != nil {
+		return false, err
+	}
 	emails, err := s.Contacts.Emails(ctx, e.Data.PatientID)
 	if errors.Is(err, ErrNoContact) {
-		// Sin destinatario no hay correo, pero el aviso del portal se publica igual.
 		emails, err = nil, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	now := s.Now().UTC()
-	params := map[string]string{"operationName": "Turno medico", "reference": e.Data.TurnID}
-	if mapping.template == "operation-confirmed.v1" {
-		params["scheduledAt"] = e.Data.StartAt
-	} else {
+	params := map[string]string{"operationName": "Turno médico", "reference": e.Data.TurnID}
+	if mapping.template == "operation-cancelled.v1" {
 		params["reason"] = e.Data.ReasonCode
+	} else {
+		params["scheduledAt"] = e.Data.StartAt
+	}
+	if e.EventType == "turnos.reprogramado.v1" {
+		params["operationName"] = "Reprogramación de turno médico"
 	}
 	headers := traceHeaders(ctx)
 	var ns []repository.Notification
 	for _, email := range emails {
-		ns = append(ns, repository.Notification{ID: s.NewID(), Consumer: PortalConsumer, Source: "event", TemplateID: mapping.template,
-			Recipient: email, Params: params, Status: "accepted", TraceHeaders: headers, CreatedAt: now, UpdatedAt: now})
+		ns = append(ns, repository.Notification{ID: s.NewID(), Consumer: PortalConsumer, Source: "event", TemplateID: mapping.template, Recipient: email, Params: params, Status: "accepted", TraceHeaders: headers, CreatedAt: now, UpdatedAt: now})
 	}
-	notice := repository.Notice{ID: s.NewID(), PatientID: e.Data.PatientID, TurnID: e.Data.TurnID, Kind: mapping.notice}
 	return s.Repo.RecordEvent(ctx, e.EventID, e.EventType, now, ns, notice)
 }

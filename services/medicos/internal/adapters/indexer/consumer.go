@@ -26,7 +26,7 @@ const (
 )
 
 // RoutingKeys are the events the indexer binds to.
-var RoutingKeys = []string{app.RoutingProfileUpdated, messaging.RoutingBooked, messaging.RoutingCancel}
+var RoutingKeys = []string{app.RoutingProfileUpdated, messaging.RoutingBooked, messaging.RoutingCancel, messaging.RoutingRescheduled}
 
 // Same increasing back-off as Notificaciones (ADR-005): each wait queue sends
 // the message back to the main queue when its TTL expires.

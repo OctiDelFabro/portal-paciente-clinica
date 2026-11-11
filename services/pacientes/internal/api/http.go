@@ -67,6 +67,8 @@ func (h *HTTP) register(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, repository.ErrEmailTaken):
 		authAttempts.WithLabelValues("register", "email_taken").Inc()
 		sendError(w, 409, "EMAIL_TAKEN", "The email is already registered.")
+	case errors.Is(err, repository.ErrDocumentTaken):
+		sendError(w, 409, "DOCUMENT_TAKEN", "Ya existe una ficha con ese documento. Consultá a recepción para recuperar o corregir tus datos.")
 	case err != nil:
 		authAttempts.WithLabelValues("register", "unavailable").Inc()
 		slog.ErrorContext(r.Context(), "cannot register patient", "event", "patient.register_failed", "error", err.Error())
@@ -166,7 +168,7 @@ func (h *HTTP) me(w http.ResponseWriter, r *http.Request) {
 func (h *HTTP) contact(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	role := r.Header.Get("X-User-Role")
-	if caller := r.Header.Get("X-Patient-Id"); caller != "" && caller != id && role != "doctor" {
+	if caller := r.Header.Get("X-Patient-Id"); caller != "" && !h.Service.CanReadContact(r.Context(), caller, id, role) {
 		sendError(w, 403, "FORBIDDEN", "Not allowed to read this patient.")
 		return
 	}

@@ -16,7 +16,7 @@ const NextAvailableHorizonDays = 60
 // nextAvailableAt that Medicos indexes is only an approximate ordering key
 // (ADR-006). It returns nil when no slot exists within the horizon.
 func (s *Service) NextAvailable(ctx context.Context, doctorID string) (*domain.Slot, error) {
-	doctor, err := s.Directory.Doctor(ctx, doctorID)
+	doctor, err := s.doctor(ctx, doctorID)
 	if err != nil {
 		return nil, err
 	}
@@ -32,6 +32,11 @@ func (s *Service) NextAvailable(ctx context.Context, doctorID string) (*domain.S
 	if err != nil {
 		return nil, err
 	}
+	blocks, err := s.blocks(ctx, doctorID, first, end)
+	if err != nil {
+		return nil, err
+	}
+	existing = domain.WithBlocks(existing, blocks)
 	for day := first; day.Before(end); day = day.AddDate(0, 0, 1) {
 		slots, err := domain.FreeSlots(doctor, day, now, existing)
 		if err != nil {

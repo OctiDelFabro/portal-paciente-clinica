@@ -15,7 +15,7 @@ var workdays = []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Th
 
 // agendas: appointment duration and weekly schedule (clinic time) that
 // availability and authoritative booking both enforce (ADR-007). Turnos owns
-// schedules but has no table for them yet, so they are configured here.
+// schedules; persisted doctor_agendas overrides these initial defaults.
 // Specialty (as in Medicos) selects the consultation energy profile (ADR-009).
 var agendas = map[string]domain.Doctor{
 	"doc-001": {ID: "doc-001", Duration: 30 * time.Minute, Specialty: "cardiologia", Schedule: domain.Schedule{Weekdays: workdays, Open: 9 * time.Hour, Close: 13 * time.Hour}},

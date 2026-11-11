@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -189,6 +190,10 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		sendError(w, 400, "INVALID_JSON", "Invalid JSON or unknown fields.")
+		return false
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		sendError(w, 400, "INVALID_JSON", "Debe enviarse un único objeto JSON.")
 		return false
 	}
 	return true

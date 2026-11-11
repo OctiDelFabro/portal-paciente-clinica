@@ -25,6 +25,8 @@ var (
 	ErrCancelled         = errors.New("encounter is cancelled")
 	ErrAccessUnavailable = errors.New("clinical authorization unavailable")
 	ErrForbidden         = errors.New("doctor is not assigned to this appointment")
+	ErrNotEnabled        = errors.Join(ErrForbidden, errors.New("patient is not verified"))
+	ErrTooEarly          = errors.New("appointment has not started")
 )
 
 const (
@@ -114,8 +116,9 @@ type Service struct {
 }
 
 var statusByType = map[string]string{
-	messaging.RoutingBooked: StatusScheduled,
-	messaging.RoutingCancel: StatusCancelled,
+	messaging.RoutingRescheduled: StatusScheduled,
+	messaging.RoutingBooked:      StatusScheduled,
+	messaging.RoutingCancel:      StatusCancelled,
 }
 
 // ParseEvent validates the envelope. An invalid event will not improve with
@@ -163,6 +166,9 @@ func (s *Service) AddNote(ctx context.Context, appointmentID, doctorID, role, te
 	}
 	if enc.Status == StatusCancelled {
 		return Note{}, ErrCancelled
+	}
+	if enc.StartAt.After(s.Now()) {
+		return Note{}, ErrTooEarly
 	}
 	if s.Access == nil {
 		return Note{}, ErrAccessUnavailable

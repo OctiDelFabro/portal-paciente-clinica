@@ -120,6 +120,21 @@ func (s *Service) deliver(ctx context.Context, n repository.Notification) {
 	ctx, span := otel.Tracer("notifications").Start(parent, "send email", trace.WithSpanKind(trace.SpanKindClient))
 	defer span.End()
 	now := s.Now().UTC()
+	if n.Source == "event" && n.TemplateID == "operation-reminder.v1" {
+		if s.Appointments == nil {
+			_ = s.Repo.Release(ctx, n.ID, now.Add(5*time.Second))
+			return
+		}
+		current, err := s.Appointments.Current(ctx, n.Params["reference"], n.Params["scheduledAt"])
+		if err != nil {
+			_ = s.Repo.Release(ctx, n.ID, now.Add(5*time.Second))
+			return
+		}
+		if !current {
+			_ = s.Repo.CancelDelivery(ctx, n.ID, now)
+			return
+		}
+	}
 	if !s.Breaker.Allow(now) {
 		sendResults.WithLabelValues("skipped_open_circuit").Inc()
 		_ = s.Repo.Release(ctx, n.ID, now.Add(s.Breaker.Cooldown))

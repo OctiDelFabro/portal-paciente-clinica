@@ -6,7 +6,7 @@ Proyecto de Arquitectura de Software 2026 de Octavio Del Fabro, Andres Romanutti
 
 - Registro, login y JWT de paciente, médico, recepción y administración. Las cuentas nuevas quedan pendientes de verificación; autenticarse no las habilita para reservar o consultar historias clínicas.
 - Búsqueda de profesionales por nombre o especialidad, filtros, detalle y disponibilidad.
-- Reserva y cancelación propias con 24 h de anticipación, agenda de atención en ART (UTC-03:00) y prevención de superposiciones por médico y paciente.
+- Reserva, cancelación y reprogramación propias, de menores vinculados y por recepción con 24 h de anticipación, agenda de atención en ART (UTC-03:00) y prevención de superposiciones por médico y paciente.
 - Listados paginados, próximos turnos activos primero; la interfaz permite cargar más resultados.
 - Agenda profesional, notas del médico asignado y lectura de historia clínica con un turno vigente o pasado no cancelado. El paciente habilitado consulta su propia historia. Existe un endpoint para el responsable verificado de un menor; recepción no accede al contenido clínico.
 - Recepción y administración pueden listar/verificar pacientes y registrar el vínculo con un adulto habilitado. Administración edita perfiles y reconstruye la búsqueda.
@@ -14,7 +14,7 @@ Proyecto de Arquitectura de Software 2026 de Octavio Del Fabro, Andres Romanutti
 - Estimación energética con proveedor degradable, reestimación y tarifa base/por kWh conservadas desde la reserva.
 - API de socios con clave por consumidor, aislamiento, idempotencia y precio persistido.
 
-El alcance todavía pendiente se detalla en [CORRECCIONES-REVISION.md](docs/CORRECCIONES-REVISION.md): reprogramación atómica, edición/bloqueo de agenda, gestión completa de turnos de menores y recepción, recordatorios y lectura de avisos internos. No se presentan como funciones terminadas.
+La auditoría funcional incorpora edición/bloqueo de agenda, gestión de menores y recepción, recordatorios/bandeja, validación de DNI y restricciones de edad/notas. Ver [correcciones, reglas y despliegue](docs/AUDITORIA-FUNCIONAL-CORRECCIONES.md); requiere actualizar todos los servicios implicados y frontend.
 
 ## Ejecutar localmente
 
@@ -73,7 +73,7 @@ Las contraseñas de usuarios de MySQL y RabbitMQ se aplican al inicializar sus v
 
 ## Despliegue y contratos
 
-Se conserva el despliegue de socios de `main`: https://api-turnos.srv1779429.hstgr.cloud/v1, con `/healthz` y `/v1/*`, usando `compose.hostinger.yaml`. El frontend continúa siendo local. Esta rama no despliega cambios en ese servidor ni publica las rutas internas. El proveedor energético está implementado con el contrato versionado de RenewableEnergy; Compose usa `provider-stub` de forma predeterminada. Una llamada real al otro grupo requiere su URL y clave válidas.
+Se conserva el despliegue de socios de `main`: https://api-turnos.srv1779429.hstgr.cloud/v1, con `/healthz` y `/v1/*`, usando `compose.hostinger.yaml`. El frontend publicado lo administra el equipo; modificar esta rama no actualiza ese servidor. El despliegue debe seguir la [guía de correcciones](docs/AUDITORIA-FUNCIONAL-CORRECCIONES.md#despliegue-a-cargo-del-equipo), sin publicar las rutas internas. El proveedor energético está implementado con el contrato versionado de RenewableEnergy; Compose usa `provider-stub` de forma predeterminada. Una llamada real al otro grupo requiere su URL y clave válidas.
 
 Documentación: [SPEC](docs/SPEC.md), [arquitectura](docs/ARCHITECTURE.md), [ADRs](docs/adr), [contrato socios](docs/contracts/README.md), [contrato Notificaciones](docs/contracts/NOTIFICATIONS.md), [frontend](frontend/README.md), [correcciones de la revisión](docs/CORRECCIONES-REVISION.md).
 

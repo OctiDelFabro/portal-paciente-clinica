@@ -79,11 +79,11 @@ func TestAnonymousAndInvalidTokenRequestsAreLimitedByIP(t *testing.T) {
 		h.ServeHTTP(rec, req)
 		return rec.Code
 	}
-	got := []int{from("10.0.0.1", "/api/medicos/doctors", ""), from("10.0.0.1", "/api/turnos/x", "bad.token.x"), from("10.0.0.1", "/api/turnos/x", "bad.token.x")}
+	got := []int{from("10.0.0.1", "/api/medicos/search", ""), from("10.0.0.1", "/api/turnos/x", "bad.token.x"), from("10.0.0.1", "/api/turnos/x", "bad.token.x")}
 	if got[0] != 200 || got[1] != 401 || got[2] != 429 {
 		t.Fatalf("same IP: got %v, want [200 401 429]", got)
 	}
-	if code := from("10.0.0.2", "/api/medicos/doctors", ""); code != 200 {
+	if code := from("10.0.0.2", "/api/medicos/search", ""); code != 200 {
 		t.Fatalf("another IP: %d", code)
 	}
 }

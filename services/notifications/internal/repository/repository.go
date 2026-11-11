@@ -36,10 +36,15 @@ type Notification struct {
 }
 
 type Notice struct {
-	ID        string
-	PatientID string
-	TurnID    string
-	Kind      string
+	ID        string     `json:"id"`
+	PatientID string     `json:"patientId"`
+	TurnID    string     `json:"appointmentId"`
+	Kind      string     `json:"kind"`
+	DoctorID  string     `json:"doctorId"`
+	StartAt   *time.Time `json:"startAt"`
+	Reason    string     `json:"reason"`
+	CreatedAt time.Time  `json:"createdAt"`
+	ReadAt    *time.Time `json:"readAt"`
 }
 
 type Repo struct{ DB *sql.DB }
@@ -187,9 +192,13 @@ func (r *Repo) RecordEvent(ctx context.Context, eventID, eventType string, recei
 			return false, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO portal_notices (id, patient_id, turn_id, kind, created_at) VALUES (?, ?, ?, ?, ?)",
-		notice.ID, notice.PatientID, notice.TurnID, notice.Kind, receivedAt); err != nil {
+	if err := insertNotice(ctx, tx, notice, receivedAt); err != nil {
 		return false, err
+	}
+	if eventType == "turnos.cancelado.v1" {
+		if _, err := tx.ExecContext(ctx, `UPDATE notifications SET status='cancelled',updated_at=? WHERE source='event' AND template_id='operation-reminder.v1' AND status='accepted' AND JSON_UNQUOTE(JSON_EXTRACT(params,'$.reference'))=?`, receivedAt, notice.TurnID); err != nil {
+			return false, err
+		}
 	}
 	return false, tx.Commit()
 }

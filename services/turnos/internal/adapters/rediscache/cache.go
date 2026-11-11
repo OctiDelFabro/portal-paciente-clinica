@@ -106,3 +106,18 @@ func (c *Cache) Invalidate(ctx context.Context, doctorID, day string) {
 func unavailable(ctx context.Context, op string, err error) {
 	slog.WarnContext(ctx, "cache unavailable, using database", "event", "cache.unavailable", "op", op, "error", err.Error())
 }
+
+func (c *Cache) InvalidateDays(ctx context.Context, id string, days []string) {
+	if len(days) == 0 {
+		return
+	}
+	keys := make([]string, len(days))
+	for i, day := range days {
+		keys[i] = Key(id, day)
+	}
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), Timeout)
+	defer cancel()
+	if err := c.client.Del(rctx, keys...).Err(); err != nil {
+		unavailable(ctx, "invalidate_schedule", err)
+	}
+}
