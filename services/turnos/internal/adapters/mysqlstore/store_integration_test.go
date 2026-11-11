@@ -14,7 +14,7 @@ import (
 
 	"github.com/testcontainers/testcontainers-go/modules/mysql"
 
-	"portal-paciente-clinica/services/turnos/internal/adapters/directory"
+	"portal-paciente-clinica/services/turnos/internal/adapters/directory/fixture"
 	"portal-paciente-clinica/services/turnos/internal/app"
 	"portal-paciente-clinica/services/turnos/internal/domain"
 )
@@ -45,7 +45,7 @@ func TestConcurrentOverlappingBookingsKeepOne(t *testing.T) {
 	now := time.Now().UTC()
 	base := nextWorkday(now).Add(9 * time.Hour)
 	var seq atomic.Int64
-	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
+	svc := &app.Service{Store: store, Directory: fixture.Directory{}, Now: func() time.Time { return now },
 		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-8000-%012d", seq.Add(1)) }}
 	var ok atomic.Int32
 	var wg sync.WaitGroup
@@ -74,7 +74,7 @@ var idSeq atomic.Int64
 func TestCancelPersistsVersionAndEvent(t *testing.T) {
 	store := startStore(t)
 	now := time.Now().UTC()
-	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
+	svc := &app.Service{Store: store, Directory: fixture.Directory{}, Now: func() time.Time { return now },
 		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-9000-%012d", idSeq.Add(1)) }}
 	a, err := svc.Book(context.Background(), "pat-001", "doc-002", nextWorkday(now).Add(14*time.Hour))
 	if err != nil {
@@ -96,7 +96,7 @@ func TestConcurrentPartnerRequestsWithSameKeyCreateOne(t *testing.T) {
 	now := time.Now().UTC()
 	start := nextWorkday(now).Add(14 * time.Hour)
 	var seq atomic.Int64
-	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
+	svc := &app.Service{Store: store, Directory: fixture.Directory{}, Now: func() time.Time { return now },
 		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-8000-%012d", seq.Add(1)) },
 		Price: app.Pricing{Cents: 2500000, Currency: "ARS"}}
 	ctx := context.Background()
@@ -153,7 +153,7 @@ func nextWorkday(now time.Time) time.Time {
 func TestAvailabilitySlotIsBookableAndThenListed(t *testing.T) {
 	store := startStore(t)
 	now := time.Now().UTC()
-	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
+	svc := &app.Service{Store: store, Directory: fixture.Directory{}, Now: func() time.Time { return now },
 		NewID: func() string { return fmt.Sprintf("00000000-0000-4000-a000-%012d", idSeq.Add(1)) }}
 	ctx := context.Background()
 	day := nextWorkday(now)

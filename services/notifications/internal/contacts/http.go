@@ -1,3 +1,4 @@
+// Package contacts resolves notification recipients from Pacientes (contacts.HTTP).
 package contacts
 
 import (

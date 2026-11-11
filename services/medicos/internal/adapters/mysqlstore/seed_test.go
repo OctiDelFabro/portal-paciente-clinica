@@ -10,7 +10,7 @@ import (
 // Turnos validates bookings against its own doctor IDs; the Medicos seed must
 // expose exactly the same ones or search would offer unbookable doctors.
 func TestSeedDoctorIDsMatchTurnos(t *testing.T) {
-	src, err := os.ReadFile("../../../../turnos/internal/adapters/directory/seed.go")
+	src, err := os.ReadFile("../../../../turnos/internal/adapters/directory/agenda.go")
 	if err != nil {
 		t.Fatal(err)
 	}

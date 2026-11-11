@@ -75,6 +75,7 @@ let booked = false,
   enabled = false,
   role = "patient",
   notes = [];
+let seenNextAvailable = false;
 let seenDoctorURL = false,
   seenBooking = false,
   seenReason = "";
@@ -122,6 +123,11 @@ await page.route("**/api/**", async (route) => {
   if (path === "/api/medicos/search")
     return json({ items: [doctor], page: 1, size: 8, total: 1 });
   if (path === "/api/medicos/doctors/doc-001") return json(doctor);
+  if (path.endsWith("/next-available")) {
+    assert.ok(path.includes("/doc-001/"));
+    seenNextAvailable = true;
+    return json({ doctorId: doctor.id, startAt: start, endAt: end, horizonDays: 60 });
+  }
   if (path.includes("/availability")) {
     assert.ok(path.includes("/doc-001/"));
     seenDoctorURL = true;
@@ -231,7 +237,7 @@ try {
   await page
     .getByRole("heading", { name: "Turno confirmado", exact: true })
     .waitFor();
-  assert.ok(seenDoctorURL && seenBooking);
+  assert.ok(seenDoctorURL && seenBooking && seenNextAvailable);
   checks.push(
     "patient search -> availability -> booking uses actual doctor ID",
   );
@@ -282,6 +288,7 @@ try {
   checks.push("reception login -> patient verification screen");
   await logout();
   await login("admin");
+  await page.getByLabel("Identificador del profesional").fill("doc-001");
   await page
     .getByRole("button", { name: "Consultar perfil", exact: true })
     .click();

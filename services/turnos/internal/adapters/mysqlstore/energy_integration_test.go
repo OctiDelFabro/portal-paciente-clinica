@@ -14,7 +14,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	tcmysql "github.com/testcontainers/testcontainers-go/modules/mysql"
 
-	"portal-paciente-clinica/services/turnos/internal/adapters/directory"
+	"portal-paciente-clinica/services/turnos/internal/adapters/directory/fixture"
 	"portal-paciente-clinica/services/turnos/internal/app"
 	"portal-paciente-clinica/services/turnos/internal/domain"
 )
@@ -99,7 +99,7 @@ func TestBookingWithPendingEnergyIsReestimated(t *testing.T) {
 	store := startStore(t)
 	now := time.Now().UTC()
 	est := &flakyEstimator{err: app.ErrEnergyUnavailable}
-	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now },
+	svc := &app.Service{Store: store, Directory: fixture.Directory{}, Now: func() time.Time { return now },
 		NewID:  func() string { return fmt.Sprintf("00000000-0000-4000-c000-%012d", idSeq.Add(1)) },
 		Energy: est, Tariff: domain.Tariff{BaseCents: 2_500_000, CentsPerKWh: 18_000}}
 	ctx := context.Background()

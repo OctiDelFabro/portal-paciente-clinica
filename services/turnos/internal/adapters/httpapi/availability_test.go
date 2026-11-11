@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -87,5 +88,37 @@ func TestWithInstanceSetsResponseHeader(t *testing.T) {
 	WithInstance("turnos-2", http.NotFoundHandler()).ServeHTTP(rec, httptest.NewRequest("GET", "/x", nil))
 	if rec.Header().Get("X-Instance") != "turnos-2" {
 		t.Fatalf("got %q", rec.Header().Get("X-Instance"))
+	}
+}
+
+type fakeNext struct {
+	slot *domain.Slot
+	err  error
+}
+
+func (f fakeNext) NextAvailable(context.Context, string) (*domain.Slot, error) { return f.slot, f.err }
+
+func getNext(q NextAvailableQuery, path string) *httptest.ResponseRecorder {
+	mux := http.NewServeMux()
+	RegisterNextAvailable(mux, q)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	return rec
+}
+
+func TestNextAvailableReturnsClinicLocalSlot(t *testing.T) {
+	start := time.Date(2026, 11, 16, 17, 0, 0, 0, time.UTC)
+	rec := getNext(fakeNext{slot: &domain.Slot{StartAt: start, EndAt: start.Add(20 * time.Minute)}}, "/doctors/doc-002/next-available")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"startAt":"2026-11-16T14:00:00-03:00"`) {
+		t.Fatalf("unexpected response %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestNextAvailableWithoutSlotsAndUnknownDoctor(t *testing.T) {
+	if rec := getNext(fakeNext{}, "/doctors/doc-002/next-available"); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"startAt":null`) {
+		t.Fatalf("unexpected response %d %s", rec.Code, rec.Body)
+	}
+	if rec := getNext(fakeNext{err: app.ErrUnknownDoctor}, "/doctors/nope/next-available"); rec.Code != 404 {
+		t.Fatalf("want 404, got %d", rec.Code)
 	}
 }

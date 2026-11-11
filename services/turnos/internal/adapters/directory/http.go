@@ -40,7 +40,7 @@ func (d *HTTP) Patient(ctx context.Context, id string) (domain.Patient, error) {
 	return domain.Patient{ID: p.PatientID, Enabled: p.Enabled && p.Role == "patient"}, nil
 }
 func (d *HTTP) Doctor(ctx context.Context, id string) (domain.Doctor, error) {
-	doctor, err := (Seed{}).Doctor(ctx, id)
+	doctor, err := Agenda(ctx, id)
 	if err != nil {
 		return doctor, err
 	}
@@ -76,7 +76,7 @@ func (d *HTTP) Doctor(ctx context.Context, id string) (domain.Doctor, error) {
 	return doctor, nil
 }
 func (d *HTTP) Doctors(ctx context.Context) ([]domain.Doctor, error) {
-	seeds, _ := (Seed{}).Doctors(ctx)
+	seeds := Agendas(ctx)
 	out := []domain.Doctor{}
 	for _, seed := range seeds {
 		doctor, err := d.Doctor(ctx, seed.ID)

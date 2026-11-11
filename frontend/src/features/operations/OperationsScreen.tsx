@@ -166,7 +166,7 @@ export function OperationsScreen({ session }: { session: Session }) {
   );
 }
 function DoctorAdministration() {
-  const [id, setId] = useState("doc-001");
+  const [id, setId] = useState("");
   const [doctor, setDoctor] = useState<Doctor | null>(null);
   const [specialties, setSpecialties] = useState("");
   const [message, setMessage] = useState("");
@@ -209,13 +209,18 @@ function DoctorAdministration() {
         <input
           id="doctor-admin-id"
           value={id}
+          placeholder="Ej.: doc-001"
           onChange={(e) => {
             setId(e.target.value);
             setDoctor(null);
           }}
         />
       </div>
-      <button className="btn btn--secondary" onClick={() => void load()}>
+      <button
+        className="btn btn--secondary"
+        disabled={!id.trim()}
+        onClick={() => void load()}
+      >
         Consultar perfil
       </button>
       {message ? <Notice tone="alert" title={message} /> : null}

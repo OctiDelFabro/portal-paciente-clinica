@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ArrowRight, ChevronLeft, ChevronRight, Search } from 'lucide-react';
-import { medicos } from '../../api/endpoints';
+import { medicos, turnos } from '../../api/endpoints';
 import { ApiError } from '../../api/http';
 import type { Appointment, Doctor, SearchQuery, SearchResult, Specialty } from '../../api/types';
 import { formatDay, formatTime, SPECIALTY_LABELS, specialtyName } from '../../format';
@@ -11,6 +11,10 @@ import { NextPass } from '../appointments/NextPass';
 
 const PAGE_SIZE = 8;
 const INITIAL: SearchQuery = { q: '', specialty: '', acceptsMinors: false, sort: 'nextAvailable', page: 1, size: PAGE_SIZE };
+
+// Turnos owns schedules, so the first free slot comes from it, not from the
+// approximate nextAvailableAt that Medicos indexes (ADR-006).
+type Next = { kind: 'loading' } | { kind: 'slot'; startAt: string } | { kind: 'none' } | { kind: 'error' };
 
 type State =
   | { kind: 'loading' }
@@ -24,6 +28,7 @@ export function SearchScreen({ session, onBooked }: { session: Session; onBooked
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [selected, setSelected] = useState<Doctor | null>(null);
+  const [next, setNext] = useState<Record<string, Next>>({});
 
   useEffect(() => {
     medicos
@@ -50,6 +55,34 @@ export function SearchScreen({ session, onBooked }: { session: Session; onBooked
       alive = false;
     };
   }, [query]);
+
+  useEffect(() => {
+    if (state.kind !== 'ready') return;
+    let alive = true;
+    const ids = state.result.items.map((d) => d.doctorId);
+    setNext(Object.fromEntries(ids.map((id) => [id, { kind: 'loading' } as Next])));
+    for (const id of ids) {
+      turnos
+        .nextAvailable(id)
+        .then((r): Next => (r.startAt ? { kind: 'slot', startAt: r.startAt } : { kind: 'none' }))
+        .catch((): Next => ({ kind: 'error' }))
+        .then((value) => alive && setNext((prev) => ({ ...prev, [id]: value })));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [state]);
+
+  const items = (() => {
+    if (state.kind !== 'ready') return [];
+    if (query.sort !== 'nextAvailable') return state.result.items;
+    // Reorder the visible page by the authoritative slot; unknown values go last.
+    const key = (id: string) => {
+      const n = next[id];
+      return n?.kind === 'slot' ? Date.parse(n.startAt) : Number.POSITIVE_INFINITY;
+    };
+    return [...state.result.items].sort((a, b) => key(a.doctorId) - key(b.doctorId));
+  })();
 
   const update = (patch: Partial<SearchQuery>) => setQuery((q) => ({ ...q, ...patch, page: patch.page ?? 1 }));
   const submit = (e: FormEvent) => {
@@ -143,7 +176,7 @@ export function SearchScreen({ session, onBooked }: { session: Session; onBooked
                 </tr>
               ) : null}
               {state.kind === 'ready'
-                ? state.result.items.map((d) => (
+                ? items.map((d) => (
                     <tr key={d.doctorId} className={selected?.doctorId === d.doctorId ? 'is-selected' : undefined}>
                       <th scope="row">
                         <span className="board__primary">{d.fullName}</span>
@@ -151,13 +184,7 @@ export function SearchScreen({ session, onBooked }: { session: Session; onBooked
                       </th>
                       <td>{d.specialties.map(specialtyName).join(' · ')}</td>
                       <td className="board__date">
-                        {d.nextAvailableAt ? (
-                          <>
-                            {formatDay(d.nextAvailableAt)} <span className="board__time">{formatTime(d.nextAvailableAt)}</span>
-                          </>
-                        ) : (
-                          '—'
-                        )}
+                        <NextCell value={next[d.doctorId]} />
                       </td>
                       <td className="board__action">
                         <button
@@ -206,5 +233,16 @@ export function SearchScreen({ session, onBooked }: { session: Session; onBooked
         )}
       </aside>
     </div>
+  );
+}
+
+function NextCell({ value }: { value: Next | undefined }) {
+  if (!value || value.kind === 'loading') return <span className="board__meta">Consultando…</span>;
+  if (value.kind === 'none') return <span className="board__meta">Sin turnos en los próximos 60 días</span>;
+  if (value.kind === 'error') return <>—</>;
+  return (
+    <>
+      {formatDay(value.startAt)} <span className="board__time">{formatTime(value.startAt)}</span>
+    </>
   );
 }

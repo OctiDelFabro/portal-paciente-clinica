@@ -102,3 +102,44 @@ func TestRejectedBookingDoesNotInvalidate(t *testing.T) {
 		t.Fatalf("rejected booking invalidated %v", cache.keys)
 	}
 }
+
+func TestNextAvailableSkipsBookedSlotsAndRespectsSchedule(t *testing.T) {
+	svc, _ := newService()
+	ctx := context.Background()
+	first, err := svc.NextAvailable(ctx, "d-1")
+	if err != nil || first == nil {
+		t.Fatalf("want a slot, got %v %v", first, err)
+	}
+	doctor, _ := svc.Directory.Doctor(ctx, "d-1")
+	if first.StartAt.Sub(fixedNow) < domain.MinLeadTime || !doctor.Schedule.Allows(first.StartAt, doctor.Duration) {
+		t.Fatalf("next slot is not bookable: %s", first.StartAt)
+	}
+	if _, err := svc.Book(ctx, "p-1", "d-1", first.StartAt); err != nil {
+		t.Fatal(err)
+	}
+	second, err := svc.NextAvailable(ctx, "d-1")
+	if err != nil || second == nil || !second.StartAt.After(first.StartAt) {
+		t.Fatalf("booked slot still offered: first %s, second %v, err %v", first.StartAt, second, err)
+	}
+}
+
+func TestNextAvailableReportsUnknownDoctor(t *testing.T) {
+	svc, _ := newService()
+	if _, err := svc.NextAvailable(context.Background(), "nope"); !errors.Is(err, ErrUnknownDoctor) {
+		t.Fatalf("want ErrUnknownDoctor, got %v", err)
+	}
+}
+
+// Regression: search showed 00:37 for a doctor who works 9 to 11, because the
+// value ignored office hours. The first slot must be inside the schedule.
+func TestNextAvailableAtMidnightStartsAtOpeningTime(t *testing.T) {
+	svc, _ := newService()
+	svc.Now = func() time.Time { return time.Date(2026, 10, 20, 0, 37, 0, 0, domain.ClinicZone) }
+	slot, err := svc.NextAvailable(context.Background(), "d-1")
+	if err != nil || slot == nil {
+		t.Fatalf("want a slot, got %v %v", slot, err)
+	}
+	if got := slot.StartAt.In(domain.ClinicZone).Format("2006-01-02 15:04"); got != "2026-10-21 09:00" {
+		t.Fatalf("want 2026-10-21 09:00, got %s", got)
+	}
+}

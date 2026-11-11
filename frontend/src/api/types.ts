@@ -73,6 +73,14 @@ export interface Availability {
   slots: Slot[];
 }
 
+/** First bookable slot of a doctor, computed by Turnos (owner of schedules). */
+export interface NextAvailable {
+  doctorId: string;
+  startAt: string | null;
+  endAt: string | null;
+  horizonDays: number;
+}
+
 /** Money travels as a decimal string or number; never do arithmetic on it in the browser. */
 export type Money = string | number;
 
