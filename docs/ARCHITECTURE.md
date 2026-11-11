@@ -1,6 +1,6 @@
 # Arquitectura del portal
 
-Estado del código después de la revisión de `main` del 10/11/2026. Los requisitos objetivo están en [SPEC](SPEC.md); las funciones pendientes y la matriz F01–F17 están en [CORRECCIONES-REVISION](CORRECCIONES-REVISION.md).
+Estado del código tras las correcciones de la auditoría funcional del 11/11/2026. Los requisitos objetivo están en [SPEC](SPEC.md); las funciones pendientes y la matriz F01–F17 están en [CORRECCIONES-REVISION](CORRECCIONES-REVISION.md).
 
 ## Componentes y propiedad de datos
 
@@ -19,7 +19,7 @@ No se accede a bases de otros servicios. Pacientes expone `GET /internal/patient
 
 ## Entradas y autorización
 
-El gateway tiene dos escuchas: `8080` para el portal (`/api/*`, JWT) y métricas; `8088` para socios (`/v1/*`, API key) y `/healthz`. El despliegue Hostinger expone únicamente la segunda por HTTPS. El frontend se ejecuta localmente; no contiene claves de servicio.
+El gateway tiene dos escuchas: `8080` para el portal (`/api/*`, JWT) y métricas; `8088` para socios (`/v1/*`, API key) y `/healthz`. En Hostinger, Traefik dirige `/v1` a 8088 y `/api` a 8080; las rutas internas se bloquean en gateway. El frontend publicado se sirve desde el contenedor nginx y también puede ejecutarse con Vite localmente; no contiene claves de servicio.
 
 Pacientes emite JWT HS256 con `sub`, `role`, `iss`, `iat` y `exp`; gateway valida firma, issuer, expiración, identidad y rol (`patient`, `doctor`, `reception`, `admin`), elimina los headers de identidad del cliente e inyecta los verificados. El registro público no acepta roles. Las cuentas demo de personal son optativas mediante `DEMO_PATIENT_PASSWORD`.
 

@@ -37,15 +37,11 @@ export function PatientProvider({
     try {
       const p = await pacientes.me();
       setProfile(p);
-      setError("");
       if (p.enabled) {
-        try {
-          const r = await pacientes.dependents();
-          setDependents(r.patients);
-        } catch {
-          setDependents([]);
-        }
+        const r = await pacientes.dependents();
+        setDependents(r.patients);
       } else setDependents([]);
+      setError("");
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "No pudimos verificar la cuenta.",
@@ -61,9 +57,12 @@ export function PatientProvider({
         setProfile(p);
         setError("");
         const deps = p.enabled
-          ? await pacientes.dependents().catch(() => ({ patients: [] }))
+          ? await pacientes.dependents()
           : { patients: [] };
-        if (alive) setDependents(deps.patients);
+        if (alive) {
+          setDependents(deps.patients);
+          setError("");
+        }
       } catch (e) {
         if (alive)
           setError(

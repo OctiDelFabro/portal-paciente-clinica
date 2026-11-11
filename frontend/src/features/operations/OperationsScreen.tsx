@@ -25,6 +25,7 @@ export function OperationsScreen({ session }: { session: Session }) {
       const r = await pacientes.patients(page, query);
       setPatients(r.patients);
       setNext(r.nextPage);
+      setRevision((n) => n + 1);
     } catch (e) {
       setMessage(
         e instanceof Error ? e.message : "No pudimos consultar pacientes.",
@@ -44,7 +45,6 @@ export function OperationsScreen({ session }: { session: Session }) {
         { enabled: !p.enabled },
       );
       await load();
-      setRevision((n) => n + 1);
     } catch (e) {
       setMessage(
         e instanceof Error ? e.message : "No pudimos verificar los datos.",
@@ -68,7 +68,6 @@ export function OperationsScreen({ session }: { session: Session }) {
         adult ? "Vínculo verificado actualizado." : "Vínculo retirado.",
       );
       await load();
-      setRevision((n) => n + 1);
     } catch (e) {
       setMessage(
         e instanceof Error ? e.message : "No pudimos registrar el vínculo.",
@@ -189,6 +188,7 @@ export function OperationsScreen({ session }: { session: Session }) {
             value={child}
             onChange={setChild}
             minorOnly
+            refreshKey={revision}
           />
           <PatientSearch
             id="adult-id"
@@ -196,6 +196,7 @@ export function OperationsScreen({ session }: { session: Session }) {
             value={adult}
             onChange={setAdult}
             adultOnly
+            refreshKey={revision}
           />
         </div>
         <p>

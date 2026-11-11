@@ -84,6 +84,7 @@ let expectedTarget = "pat-new",
   noticeRead = false,
   profileEdited = false;
 let rejectRescheduleOnce = true;
+let dependentsUnavailable = false;
 let patientCreated = false,
   linkSaved = false;
 let schedule = {
@@ -134,6 +135,7 @@ const token = () =>
   ).toString("base64url") +
   ".test";
 const page = await browser.newPage();
+await page.clock.install();
 page.setDefaultTimeout(10000);
 page.on("pageerror", (error) => errors.push(error.message));
 await page.route("**/api/**", async (route) => {
@@ -155,8 +157,19 @@ await page.route("**/api/**", async (route) => {
     });
   if (path === "/api/pacientes/me")
     return json({ ...patient(), role: "patient" });
-  if (path === "/api/pacientes/dependents")
+  if (path === "/api/pacientes/dependents") {
+    if (dependentsUnavailable)
+      return json(
+        {
+          error: {
+            code: "DIRECTORY_UNAVAILABLE",
+            message: "No pudimos consultar los menores vinculados.",
+          },
+        },
+        503,
+      );
     return json({ patients: dependent ? [child()] : [] });
+  }
   if (path.endsWith("/schedule")) {
     if (req.method() === "PUT") {
       schedule = req.postDataJSON();
@@ -414,6 +427,23 @@ try {
     .selectOption("pat-child");
   expectedTarget = "pat-child";
   booked = false;
+  dependentsUnavailable = true;
+  await page.clock.fastForward(31000);
+  await page
+    .getByText("No pudimos verificar la cuenta", { exact: true })
+    .waitFor();
+  assert.equal(
+    await page.getByLabel("Atención para", { exact: true }).inputValue(),
+    "pat-child",
+  );
+  dependentsUnavailable = false;
+  await page.getByRole("button", { name: "Reintentar", exact: true }).click();
+  await page
+    .getByText("No pudimos verificar la cuenta", { exact: true })
+    .waitFor({ state: "hidden" });
+  checks.push(
+    "dependent directory outage keeps the selected patient and offers retry",
+  );
   await page.getByRole("link", { name: "Buscar médico", exact: true }).click();
   await page
     .getByRole("button", { name: "Ver disponibilidad de Laura Gómez" })

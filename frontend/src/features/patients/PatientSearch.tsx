@@ -10,6 +10,7 @@ export function PatientSearch({
   onChange,
   minorOnly = false,
   adultOnly = false,
+  refreshKey = 0,
 }: {
   id: string;
   label: string;
@@ -17,6 +18,7 @@ export function PatientSearch({
   onChange: (p: PatientProfile | null) => void;
   minorOnly?: boolean;
   adultOnly?: boolean;
+  refreshKey?: number;
 }) {
   const [query, setQuery] = useState(""),
     [options, setOptions] = useState<PatientProfile[]>([]),
@@ -48,7 +50,7 @@ export function PatientSearch({
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [query, minorOnly, adultOnly]);
+  }, [query, minorOnly, adultOnly, refreshKey]);
   const visible =
     value && !options.some((p) => p.patientId === value.patientId)
       ? [value, ...options]

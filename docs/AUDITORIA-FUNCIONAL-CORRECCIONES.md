@@ -78,11 +78,9 @@ git switch main
 git pull --ff-only origin main
 docker compose -f compose.yaml -f compose.hostinger.yaml up -d --build pacientes medicos historia-clinica notifications
 docker compose -f compose.yaml -f compose.hostinger.yaml up -d --build turnos-1 turnos-2 gateway
-cd frontend
-npm ci
-npm run build
+docker compose -f compose.yaml -f compose.hostinger.yaml up -d --build frontend
 ```
 
-Publicar `frontend/dist` en el nginx del portal y aplicar `infra/nginx-portal.conf`. Mantener `INTERNAL_API_KEY` actual, compartida por servicios; Notificaciones consulta `TURNOS_URLS` con los nombres internos de Compose por defecto. Las migraciones se aplican al iniciar servicios. Conservar respaldos y volúmenes; no ejecutar `down -v`. Actualizar productores y consumidores durante una ventana coordinada para que los consumidores nuevos estén disponibles antes de utilizar reprogramaciones/recordatorios.
+El servicio `frontend` de `compose.hostinger.yaml` compila React y empaqueta `infra/nginx-portal.conf` en nginx mediante `infra/Dockerfile.frontend`. Si el equipo usa otro nginx, ejecutar `npm ci && npm run build` dentro de `frontend`, publicar `frontend/dist` y aplicar esa configuración. Mantener `INTERNAL_API_KEY` actual, compartida por servicios; Notificaciones consulta `TURNOS_URLS` con los nombres internos de Compose por defecto. Las migraciones se aplican al iniciar servicios. Conservar respaldos y volúmenes; no ejecutar `down -v`. Actualizar productores y consumidores durante una ventana coordinada para que los consumidores nuevos estén disponibles antes de utilizar reprogramaciones/recordatorios.
 
 Después, repetir los flujos de paciente, responsable, médico y recepción en el sitio, y verificar los correos con el proveedor configurado. Las mediciones de carga, failover y el acuerdo con el proveedor externo siguen siendo validación operativa pendiente, no defectos que puedan darse por corregidos por compilar.
