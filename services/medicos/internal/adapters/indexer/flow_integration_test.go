@@ -88,7 +88,14 @@ func TestProfileChangeAndBookingsReachSearch(t *testing.T) {
 	}
 	start := time.Now()
 	waitFor(t, "profile change in search", func() bool {
-		return search(domain.Query{Specialty: "dermatologia", Page: 1, Size: 10}).Total == 1
+		// Other seeded doctors can already have this specialty. The event is
+		// applied only when this doctor's new profile reaches the index.
+		for _, d := range search(domain.Query{Specialty: "dermatologia", Page: 1, Size: 10}).Items {
+			if d.DoctorID == "doc-001" && d.ProfileVersion == 2 {
+				return true
+			}
+		}
+		return false
 	})
 	if lag := time.Since(start); lag > 5*time.Second {
 		t.Fatalf("index lag %s exceeds ADR-006 objective of 5 s", lag)
