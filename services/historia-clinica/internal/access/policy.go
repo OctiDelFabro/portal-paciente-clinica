@@ -37,7 +37,10 @@ func (p *Policy) Authorize(ctx context.Context, role, caller, target string) err
 	if err != nil {
 		return service.ErrAccessUnavailable
 	}
-	if actor.Role != role || !actor.Enabled {
+	if !actor.Enabled {
+		return service.ErrNotEnabled
+	}
+	if actor.Role != role {
 		return service.ErrForbidden
 	}
 	if role == "patient" && caller == target {
@@ -51,8 +54,8 @@ func (p *Policy) Authorize(ctx context.Context, role, caller, target string) err
 		return service.ErrForbidden
 	}
 	if role == "patient" {
-		childBirth, e1 := time.Parse(time.DateOnly, patient.BirthDate)
-		adultBirth, e2 := time.Parse(time.DateOnly, actor.BirthDate)
+		childBirth, e1 := time.ParseInLocation(time.DateOnly, patient.BirthDate, time.FixedZone("ART", -3*60*60))
+		adultBirth, e2 := time.ParseInLocation(time.DateOnly, actor.BirthDate, time.FixedZone("ART", -3*60*60))
 		if !patient.Enabled || patient.ResponsibleID != caller || e1 != nil || e2 != nil || !childBirth.AddDate(18, 0, 0).After(p.Now()) || adultBirth.AddDate(18, 0, 0).After(p.Now()) {
 			return service.ErrForbidden
 		}

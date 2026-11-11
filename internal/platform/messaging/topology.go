@@ -21,9 +21,9 @@ func DeclareTopology(ch TopologyChannel) error {
 		name string
 		keys []string
 	}{
-		{"notifications.turnos.v1", []string{RoutingBooked, RoutingCancel}},
-		{"historia-clinica.turnos.v1", []string{RoutingBooked, RoutingCancel}},
-		{"medicos.indexer.v1", []string{RoutingBooked, RoutingCancel, "medicos.perfil-actualizado.v1"}},
+		{"notifications.turnos.v1", []string{RoutingBooked, RoutingCancel, RoutingRescheduled, RoutingReminder}},
+		{"historia-clinica.turnos.v1", []string{RoutingBooked, RoutingCancel, RoutingRescheduled}},
+		{"medicos.indexer.v1", []string{RoutingBooked, RoutingCancel, RoutingRescheduled, "medicos.perfil-actualizado.v1"}},
 	}
 	for _, q := range queues {
 		if _, err := ch.QueueDeclare(q.name, true, false, false, false, amqp.Table{"x-dead-letter-exchange": DeadExchange, "x-dead-letter-routing-key": q.name}); err != nil {

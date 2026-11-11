@@ -20,3 +20,5 @@ Los contratos HTTP se adaptan en `src/api/endpoints.ts`: Médicos envía `id`, c
 Las pruebas Node empaquetan el cliente TypeScript real con esbuild y comprueban los contratos, el timeout de cuerpo y el cambio de sesión. La prueba `test:ui` recorre la SPA compilada en Chromium con respuestas HTTP simuladas (paciente, médico, recepción y administración). No sustituyen una prueba del stack completo. Ver [verificación](../docs/VERIFICACION.md) y [pendientes](../docs/CORRECCIONES-REVISION.md).
 
 El registro público siempre crea pacientes. Los roles de personal provienen del JWT emitido por Pacientes; escribir un rol en un header del navegador no otorga permisos. No guardar API keys de socios, del proveedor ni de servicios internos en el código web.
+
+La auditoría funcional incorpora selector de menor, reprogramación, bandeja de avisos, configuración/bloqueos del médico y registro/edición/asignación por recepción. [Reglas y endpoints](../docs/AUDITORIA-FUNCIONAL-CORRECCIONES.md). El buscador obtiene el catálogo filtrado completo (máximo 1000), ordena con disponibilidad real y luego pagina. Fechas disponibles: 60 días desde mañana en Argentina.

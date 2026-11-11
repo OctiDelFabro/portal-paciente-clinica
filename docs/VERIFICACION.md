@@ -47,3 +47,7 @@ La API de socios de Hostinger se conserva desde `main`. Una comprobación de sal
 La ejecución 42894115834 pudo iniciar y ejecutar los tests. Pasaron Go con detector de carreras, `go vet`, los tests del cliente y el build. La primera ejecución real detectó dos errores en los fixtures: selección del radio cubierto por la etiqueta en Chromium e IDs constantes compartidos por eventos distintos en MySQL. Ambos fixtures se corrigieron conservando sus comprobaciones.
 
 MongoDB 8.0 rechazó además el kernel del runner Ubuntu 24.04. Integración usa temporalmente Ubuntu 22.04 (kernel 6.8), conservando la imagen MongoDB 8.0 de la aplicación y sin omitir pruebas. El problema upstream y su corrección para Ubuntu están documentados en [SERVER-131779](https://jira.mongodb.org/browse/SERVER-131779); revisar el runner cuando el parche de MongoDB 8 esté publicado y probado. El workflow muestra `uname -r` para conservar evidencia del kernel utilizado. Consultar el resultado del último commit del PR para el estado final de la reejecución.
+
+## Regresiones de la auditoría funcional del 11/11/2026
+
+Se amplían las pruebas existentes sin omitir casos de infraestructura. [Matriz y límites de las nuevas pruebas](AUDITORIA-FUNCIONAL-CORRECCIONES.md#verificación). Los tests del navegador usan HTTP simulado; los de integración usan contenedores reales. El resultado del último commit del PR determina qué ejecuciones pasaron; una compilación local de integración no es ejecución.

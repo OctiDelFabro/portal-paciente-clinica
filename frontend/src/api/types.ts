@@ -143,3 +143,38 @@ export interface ClinicalHistory {
   patientId: string;
   records: ClinicalRecord[];
 }
+
+export interface PatientProfile {
+  patientId: string;
+  fullName: string;
+  email: string | null;
+  documentNumber: string;
+  birthDate: string;
+  enabled: boolean;
+  responsiblePatientId: string;
+}
+export interface DoctorSchedule {
+  doctorId: string;
+  durationMinutes: number;
+  weekdays: number[];
+  open: string;
+  close: string;
+}
+export interface AgendaBlock {
+  id: string;
+  doctorId: string;
+  startAt: string;
+  endAt: string;
+  reason: string;
+}
+export interface PortalNotice {
+  id: string;
+  patientId: string;
+  appointmentId: string;
+  kind: string;
+  doctorId: string;
+  startAt: string | null;
+  reason: string;
+  createdAt: string;
+  readAt: string | null;
+}

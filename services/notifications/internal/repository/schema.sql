@@ -39,3 +39,10 @@ CREATE TABLE IF NOT EXISTS portal_notices (
   read_at DATETIME(3) NULL,
   INDEX idx_patient (patient_id, created_at)
 );
+
+CREATE TABLE IF NOT EXISTS portal_notice_details (
+ notice_id CHAR(36) PRIMARY KEY,
+ doctor_id VARCHAR(64) NOT NULL,
+ start_at DATETIME(3) NULL,
+ reason VARCHAR(200) NOT NULL DEFAULT ''
+);

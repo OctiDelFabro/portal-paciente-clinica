@@ -1,3 +1,4 @@
+import { DoctorSchedule } from "./DoctorSchedule";
 import { useEffect, useState, type FormEvent } from "react";
 import { RefreshCw } from "lucide-react";
 import { historia, pacientes } from "../../api/endpoints";
@@ -10,7 +11,7 @@ import { HistoryScreen } from "../history/HistoryScreen";
 import { useAppointments } from "../appointments/useAppointments";
 
 /** Doctor view: assigned appointments as a board, and a note per encounter. */
-export function AgendaScreen() {
+export function AgendaScreen({ doctorId }: { doctorId: string }) {
   const { items, state, refresh, hasMore, refreshing, loadMore } =
     useAppointments();
   const names = usePatientNames(items.map((a) => a.patientId));
@@ -38,6 +39,7 @@ export function AgendaScreen() {
         </button>
       </header>
 
+      <DoctorSchedule doctorId={doctorId} onChanged={() => void refresh()} />
       {state.kind === "error" ? (
         <Notice
           tone={state.unavailable ? "alert" : "error"}
@@ -168,6 +170,12 @@ function AgendaRow({
             <button
               type="button"
               className="btn btn--secondary btn--small"
+              disabled={Date.parse(a.startAt) > Date.now()}
+              title={
+                Date.parse(a.startAt) > Date.now()
+                  ? "Disponible a partir del inicio del turno"
+                  : undefined
+              }
               aria-expanded={open}
               onClick={onToggle}
             >

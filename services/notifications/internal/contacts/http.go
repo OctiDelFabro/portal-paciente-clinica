@@ -10,9 +10,17 @@ import (
 
 // HTTP resolves the current verified patient and responsible adult. An outage
 // is retryable; only a successful lookup without addresses is ErrNoContact.
-type HTTP struct{ Patients *patientclient.Client }
+type HTTP struct {
+	Patients *patientclient.Client
+	Now      func() time.Time
+}
 
 func (h HTTP) Emails(ctx context.Context, id string) ([]string, error) {
+	now := time.Now()
+	if h.Now != nil {
+		now = h.Now()
+	}
+	zone := time.FixedZone("ART", -3*3600)
 	p, err := h.Patients.Profile(ctx, id)
 	if err != nil {
 		return nil, err
@@ -26,14 +34,14 @@ func (h HTTP) Emails(ctx context.Context, id string) ([]string, error) {
 		}
 	}
 	add(p.Email)
-	birth, birthErr := time.Parse(time.DateOnly, p.BirthDate)
-	if p.ResponsibleID != "" && birthErr == nil && birth.AddDate(18, 0, 0).After(time.Now()) {
+	birth, birthErr := time.ParseInLocation(time.DateOnly, p.BirthDate, zone)
+	if p.ResponsibleID != "" && birthErr == nil && birth.AddDate(18, 0, 0).After(now) {
 		r, err := h.Patients.Profile(ctx, p.ResponsibleID)
 		if err != nil {
 			return nil, err
 		}
-		adultBirth, adultErr := time.Parse(time.DateOnly, r.BirthDate)
-		if r.Enabled && r.Role == "patient" && adultErr == nil && !adultBirth.AddDate(18, 0, 0).After(time.Now()) {
+		adultBirth, adultErr := time.ParseInLocation(time.DateOnly, r.BirthDate, zone)
+		if r.Enabled && r.Role == "patient" && adultErr == nil && !adultBirth.AddDate(18, 0, 0).After(now) {
 			add(r.Email)
 		}
 	}

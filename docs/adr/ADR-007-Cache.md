@@ -42,7 +42,7 @@ Se acepta mostrar una disponibilidad desactualizada hasta 30 s en el peor caso (
 |---|---|---|
 | Lectura | `GET /doctors/{id}/availability?date=AAAA-MM-DD` devuelve las franjas libres del día (hora de la clínica, UTC-03:00), listas para enviar como `startAt` de una reserva. | `httpapi/availability.go`, `httpapi/availability_test.go` |
 | Cálculo | `domain.FreeSlots` divide la agenda semanal del médico según su duración de turno y descarta franjas con menos de 24 h de anticipación o superpuestas con turnos activos del médico: las mismas reglas que `domain.Book`. | `domain/availability_test.go` (incluye "toda franja libre es reservable") |
-| Agenda | Configurada en el código de Turnos (todavía sin tabla ni pantalla): `doc-001` lun–vie 09:00–13:00 (30 min); `doc-002` lun–vie 14:00–18:00 (20 min); `doc-003` lun–vie 08:00–12:00 (30 min); `doc-004` lun–vie 15:00–19:00 (20 min). | `directory/agenda.go` |
+| Agenda | Configuración inicial en código, reemplazable por `doctor_agendas` y pantalla propia del médico: `doc-001` lun–vie 09:00–13:00 (30 min); `doc-002` lun–vie 14:00–18:00 (20 min); `doc-003` lun–vie 08:00–12:00 (30 min); `doc-004` lun–vie 15:00–19:00 (20 min). | `directory/agenda.go` |
 | Cache-aside | Adaptador `rediscache` que decora la consulta a MySQL: clave `availability:v1:{doctorId}:{yyyy-mm-dd}`, TTL 30 s, timeout de 100 ms por operación y sin reintentos. | `rediscache/cache.go`, `cache_integration_test.go` |
 | Invalidación | `app.Service` borra la clave del día de inicio (y del día de fin, si difiere) después del commit de reservas y cancelaciones, del portal y de la API de socios. Una repetición idempotente no invalida. | `app/availability_test.go` |
 | Falla de Redis | Se lee MySQL, log WARN `cache.unavailable` (campo `op`: get, set o invalidate) y `cache_requests_total{result="error"}`. | `rediscache/cache_test.go` (Redis colgado: respuesta de MySQL en menos de 600 ms) |
@@ -50,8 +50,8 @@ Se acepta mostrar una disponibilidad desactualizada hasta 30 s en el peor caso (
 | Latencia | Se usa `http_request_duration_seconds{service="turnos",route="GET /doctors/{id}/availability"}` del middleware común; no se agregó un histograma propio. | `internal/platform/obs/http.go` |
 
 ### Desvíos y limitaciones
-- La invalidación por bloqueo de agenda (RF-07) no aplica todavía: Turnos no implementa bloqueos.
-- La agenda no se valida al reservar: `POST /appointments` mantiene sus reglas (24 h y superposición) para no cambiar el contrato vigente. Una franja fuera de agenda sigue siendo reservable por la API.
+- Horarios/bloqueos persistidos en MySQL. Tras el commit se invalidan en lote los días afectados; al editar horario se invalidan los próximos 60 días, y el resto caduca por TTL. Reservas y reprogramaciones releen agenda/bloqueos bajo el bloqueo del médico.
+- Portal y socios validan horarios, duración, edad, habilitación, bloqueo y superposición en backend; la cotización valida disponibilidad del médico pero no reserva.
 - Carrera conocida del patrón: una lectura que empezó antes del commit puede guardar un valor viejo después de la invalidación. Lo acota el TTL de 30 s; la reserva sigue validándose bajo bloqueo en MySQL y responde 409 `SLOT_UNAVAILABLE`.
 - Un valor cacheado se calculó con la hora de ese momento: una franja que deja de cumplir las 24 h puede mostrarse hasta 30 s más y la reserva responde 422 `LEAD_TIME_TOO_SHORT`.
 - Pendiente: resultados k6 con caché desactivada y activada, tasa de aciertos y justificación de `cache_requests_total` en ADR-011.

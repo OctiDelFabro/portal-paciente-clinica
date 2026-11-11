@@ -58,6 +58,10 @@ func (h *HTTP) myRecords(w http.ResponseWriter, r *http.Request) {
 		patientID = target
 	}
 	records, err := h.Service.TimelineFor(r.Context(), role, r.Header.Get("X-Patient-Id"), patientID)
+	if errors.Is(err, service.ErrNotEnabled) {
+		sendError(w, 403, "PATIENT_NOT_ENABLED", "Recepción debe verificar y habilitar tu cuenta antes de consultar la historia clínica.")
+		return
+	}
 	if errors.Is(err, service.ErrForbidden) {
 		sendError(w, 403, "FORBIDDEN", "No existe un vínculo que habilite la consulta.")
 		return
@@ -105,6 +109,8 @@ func (h *HTTP) addNote(w http.ResponseWriter, r *http.Request) {
 	doctorID := r.Header.Get("X-Patient-Id")
 	note, err := h.Service.AddNote(r.Context(), r.PathValue("appointmentId"), doctorID, role, req.Text)
 	switch {
+	case errors.Is(err, service.ErrTooEarly):
+		sendError(w, 422, "APPOINTMENT_NOT_STARTED", "La atención puede registrarse a partir del inicio del turno.")
 	case errors.Is(err, service.ErrAccessUnavailable):
 		sendError(w, 503, "AUTHORIZATION_UNAVAILABLE", "No pudimos verificar la autorización clínica.")
 	case errors.Is(err, service.ErrInvalidNote):

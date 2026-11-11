@@ -31,7 +31,7 @@ type AvailabilityCache interface {
 // Availability computes the free slots of doctorID on day (local midnight)
 // from the doctor's schedule and the active appointments of that day.
 func (s *Service) Availability(ctx context.Context, doctorID string, day time.Time) (Availability, error) {
-	doctor, err := s.Directory.Doctor(ctx, doctorID)
+	doctor, err := s.doctor(ctx, doctorID)
 	if err != nil {
 		return Availability{}, err
 	}
@@ -40,7 +40,11 @@ func (s *Service) Availability(ctx context.Context, doctorID string, day time.Ti
 	if err != nil {
 		return Availability{}, err
 	}
-	slots, err := domain.FreeSlots(doctor, day, s.Now(), existing)
+	blocks, err := s.blocks(ctx, doctorID, day, day.AddDate(0, 0, 1))
+	if err != nil {
+		return Availability{}, err
+	}
+	slots, err := domain.FreeSlots(doctor, day, s.Now(), domain.WithBlocks(existing, blocks))
 	if err != nil {
 		return Availability{}, err
 	}

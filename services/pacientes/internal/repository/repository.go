@@ -17,9 +17,10 @@ import (
 var schema string
 
 var (
-	ErrNotFound    = errors.New("patient not found")
-	ErrEmailTaken  = errors.New("email already registered")
-	ErrDuplicateID = errors.New("patient id already exists")
+	ErrNotFound      = errors.New("patient not found")
+	ErrEmailTaken    = errors.New("email already registered")
+	ErrDuplicateID   = errors.New("patient id already exists")
+	ErrDocumentTaken = errors.New("document already registered")
 )
 
 // Patient is a stored patient. Empty strings and a zero BirthDate mean NULL:
@@ -64,6 +65,10 @@ func Open(ctx context.Context, dsn string) (*Repo, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate role column: %w", err)
 	}
+	if err := migrateIdentity(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("migrate document identity: %w", err)
+	}
 	return &Repo{DB: db}, nil
 }
 
@@ -89,6 +94,16 @@ func nullable(s string) sql.NullString { return sql.NullString{String: s, Valid:
 // Create inserts a patient. The unique index on email resolves concurrent
 // registrations: the loser receives ErrEmailTaken.
 func (r *Repo) Create(ctx context.Context, p Patient) error {
+	tx, err := r.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if p.Role == "" || p.Role == "patient" {
+		if err := uniqueDocument(ctx, tx, p.DocumentNumber, p.ID); err != nil {
+			return err
+		}
+	}
 	var birth sql.NullTime
 	if !p.BirthDate.IsZero() {
 		birth = sql.NullTime{Time: p.BirthDate, Valid: true}
@@ -97,7 +112,7 @@ func (r *Repo) Create(ctx context.Context, p Patient) error {
 	if role == "" {
 		role = "patient"
 	}
-	_, err := r.DB.ExecContext(ctx, `INSERT INTO patients
+	_, err = tx.ExecContext(ctx, `INSERT INTO patients
 		(id, email, password_hash, full_name, document_number, birth_date, enabled, responsible_id, created_at, role)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, nullable(p.Email), nullable(p.PasswordHash), p.FullName, nullable(p.DocumentNumber), birth, p.Enabled,
@@ -109,7 +124,10 @@ func (r *Repo) Create(ctx context.Context, p Patient) error {
 		}
 		return ErrDuplicateID
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 const columns = "id, email, password_hash, full_name, document_number, birth_date, enabled, responsible_id, created_at, role"

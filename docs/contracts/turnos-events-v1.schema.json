@@ -21,7 +21,7 @@
         "turnos.reservado.v1",
         "turnos.cancelado.v1",
         "turnos.reprogramado.v1",
-        "turnos.recordatorio-solicitado.v1"
+        "turnos.recordatorio.v1"
       ]
     },
     "version": {
@@ -82,6 +82,16 @@
         "reasonCode": {
           "type": "string",
           "minLength": 1
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "reschedule"
+          ]
+        },
+        "previousTurnId": {
+          "type": "string",
+          "minLength": 1
         }
       }
     }
@@ -100,7 +110,8 @@
           "data": {
             "required": [
               "previousStartAt",
-              "previousEndAt"
+              "previousEndAt",
+              "previousTurnId"
             ]
           }
         }

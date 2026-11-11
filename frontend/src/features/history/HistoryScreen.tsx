@@ -1,3 +1,4 @@
+import { usePatientTarget } from "../patients/PatientContext";
 import { useEffect, useState } from "react";
 import { historia } from "../../api/endpoints";
 import { ApiError } from "../../api/http";
@@ -12,6 +13,12 @@ type State =
   | { kind: "error"; message: string; unavailable: boolean };
 
 export function HistoryScreen({ patientId }: { patientId?: string } = {}) {
+  const target = usePatientTarget();
+  patientId =
+    patientId ??
+    (target && target.patientId !== target.selfId
+      ? target.patientId
+      : undefined);
   const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {
@@ -21,7 +28,10 @@ export function HistoryScreen({ patientId }: { patientId?: string } = {}) {
         const e = err instanceof ApiError ? err : null;
         setState({
           kind: "error",
-          message: e?.message ?? "No pudimos traer tu historia clínica.",
+          message:
+            e?.code === "PATIENT_NOT_ENABLED"
+              ? "Recepción debe verificar y habilitar tu cuenta antes de consultar historias clínicas."
+              : (e?.message ?? "No pudimos traer tu historia clínica."),
           unavailable: e?.unavailable ?? false,
         });
       });

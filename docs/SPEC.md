@@ -60,21 +60,19 @@ El proyecto y el repositorio se llaman portal-paciente-clinica. El repositorio p
 ## 6. Estado de este paquete
 Se incorporan las respuestas posteriores a la última versión guardada en Drive y se adjuntan contrato, mock y estructura inicial. Este archivo no acredita funcionalidades clínicas implementadas. El contenido completo de la primera entrega está publicado en main del repositorio público.
 
-## 7. Estado de implementación después de la revisión (10/11/2026)
+## 7. Estado de implementación tras la auditoría funcional (11/11/2026)
 
 | Requisito | Implementación y límite |
 |---|---|
-| RF-01 | Búsqueda, filtros y paginación; texto por nombre y especialidad. |
-| RF-02/RF-03 | Reserva y cancelación propias con 24 h, habilitación actual, ventana de agenda y no superposición. Listas paginadas. La asignación por recepción sigue pendiente. |
-| RF-04 | Reprogramación atómica pendiente; no sustituirla por cancelar y reservar. |
-| RF-05 | Recepción verifica vínculos y backend clínico autoriza al responsable de un menor. Gestión de turnos y selector de menores pendientes. |
-| RF-06/RF-07 | Agenda inicial en Turnos; configuración por médico, bloqueos y su cancelación excepcional pendientes. |
-| RF-08/RF-09 | Agenda propia y notas del médico asignado implementadas; consulta de agenda por recepción pendiente. |
-| RF-10 | Historia propia y lectura autorizada para médico/responsable; recepción rechazada. |
-| RF-11/RF-13 | Registro propio, login, lista/verificación y vínculo por recepción. Alta/edición general de datos por recepción pendientes. |
-| RF-12 | Correo por reserva/cancelación con contactos actuales y avisos persistidos. Recordatorios y lectura de avisos pendientes. |
+| RF-01 | Búsqueda y filtros; próximo libre autoritativo de Turnos y orden global antes de paginar, hasta 1000 resultados. |
+| RF-02/RF-03 | Reserva/cancelación propias, de menor verificado y por recepción; 24 h, habilitación actual, horarios, bloqueo, edad y no superposición. |
+| RF-04 | Reprogramación atómica que conserva el original si falla; nuevo ID, duración/tarifa actuales y eventos transaccionales. |
+| RF-05 | Vínculo verificado, selector y gestión de turnos/historia/avisos. El acceso del responsable cesa a los 18 años. |
+| RF-06/RF-07 | Configuración persistida por médico, duración para nuevas reservas; rechaza dejar reservas fuera del horario. Bloqueo cancela afectados con excepción de 24 h; levantarlo no restaura reservas. |
+| RF-08/RF-09 | Agenda propia, consulta/asignación por recepción y notas del médico asignado desde el inicio del turno. |
+| RF-10 | Historia propia y lectura autorizada para médico/responsable; recepción/admin rechazados. |
+| RF-11/RF-13 | Registro propio y alta/edición/búsqueda/verificación por recepción. DNI normalizado único para nuevas escrituras; corrección manual de duplicados anteriores. |
+| RF-12 | Correo/avisos de reserva, cancelación, reprogramación y recordatorios; bandeja y lectura por dueño/responsable. Generación cada minuto con deduplicación e invalidación de recordatorios obsoletos. |
 | RF-14 | API de socios con idempotencia, aislamiento, precio persistido y mismas reglas de reserva. |
 
-Política de precios del portal: precio base y tarifa por kWh se conservan al reservar; la energía puede quedar pendiente. Las reservas anteriores se completan con la tarifa configurada al actualizar, sin afirmar recuperación del precio histórico. La agenda admite inicios dentro de la ventana aunque no coincidan con la grilla sugerida, siempre sin superposición.
-
-Consultar [CORRECCIONES-REVISION.md](CORRECCIONES-REVISION.md) y [VERIFICACION.md](VERIFICACION.md). Esta tabla describe implementación; no certifica ausencia de otros defectos ni una integración real que no se haya ejecutado.
+Las reglas concretas, compatibilidad con datos anteriores, rutas, pruebas y despliegue están en [AUDITORIA-FUNCIONAL-CORRECCIONES.md](AUDITORIA-FUNCIONAL-CORRECCIONES.md). Esta tabla describe código; el CI y el despliegue deben verificarse por separado. Los pendientes anteriores sobre DNI, mayoría de edad, modificación de horarios con reservas y notas anticipadas quedan resueltos por las reglas de ese documento; correcciones de notas clínicas y verificación documental externa no se agregan a este alcance.

@@ -1,31 +1,28 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { request } from "../../api/http";
-import { medicos } from "../../api/endpoints";
-import type { Doctor } from "../../api/types";
+import { medicos, pacientes } from "../../api/endpoints";
+import type { Doctor, PatientProfile } from "../../api/types";
 import type { Session } from "../../session";
 import { Notice } from "../../ui/Notice";
+import { PatientForm } from "./PatientForm";
+import { StaffAppointments } from "./StaffAppointments";
+import { PatientSearch } from "../patients/PatientSearch";
 
-type Patient = {
-  patientId: string;
-  fullName: string;
-  email: string | null;
-  enabled: boolean;
-  responsiblePatientId: string;
-};
 export function OperationsScreen({ session }: { session: Session }) {
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [page, setPage] = useState(1);
-  const [next, setNext] = useState(0);
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [child, setChild] = useState("");
-  const [adult, setAdult] = useState("");
+  const [revision, setRevision] = useState(0);
+  const [patients, setPatients] = useState<PatientProfile[]>([]),
+    [page, setPage] = useState(1),
+    [next, setNext] = useState(0),
+    [query, setQuery] = useState(""),
+    [draft, setDraft] = useState(""),
+    [message, setMessage] = useState(""),
+    [busy, setBusy] = useState(false),
+    [editing, setEditing] = useState<PatientProfile | null>(null),
+    [child, setChild] = useState<PatientProfile | null>(null),
+    [adult, setAdult] = useState<PatientProfile | null>(null);
   async function load() {
     try {
-      const r = await request<{ patients: Patient[]; nextPage: number }>(
-        "GET",
-        `/api/pacientes/patients?page=${page}`,
-      );
+      const r = await pacientes.patients(page, query);
       setPatients(r.patients);
       setNext(r.nextPage);
     } catch (e) {
@@ -36,8 +33,8 @@ export function OperationsScreen({ session }: { session: Session }) {
   }
   useEffect(() => {
     void load();
-  }, [page]);
-  async function verify(p: Patient) {
+  }, [page, query]);
+  async function verify(p: PatientProfile) {
     setBusy(true);
     setMessage("");
     try {
@@ -47,11 +44,10 @@ export function OperationsScreen({ session }: { session: Session }) {
         { enabled: !p.enabled },
       );
       await load();
+      setRevision((n) => n + 1);
     } catch (e) {
       setMessage(
-        e instanceof Error
-          ? e.message
-          : "No pudimos actualizar la verificación.",
+        e instanceof Error ? e.message : "No pudimos verificar los datos.",
       );
     } finally {
       setBusy(false);
@@ -59,16 +55,20 @@ export function OperationsScreen({ session }: { session: Session }) {
   }
   async function link(e: FormEvent) {
     e.preventDefault();
+    if (!child) return;
     setBusy(true);
     setMessage("");
     try {
       await request(
         "PATCH",
-        `/api/pacientes/patients/${encodeURIComponent(child)}/responsible`,
-        { responsiblePatientId: adult },
+        `/api/pacientes/patients/${encodeURIComponent(child.patientId)}/responsible`,
+        { responsiblePatientId: adult?.patientId ?? "" },
       );
-      setMessage("Vínculo actualizado.");
+      setMessage(
+        adult ? "Vínculo verificado actualizado." : "Vínculo retirado.",
+      );
       await load();
+      setRevision((n) => n + 1);
     } catch (e) {
       setMessage(
         e instanceof Error ? e.message : "No pudimos registrar el vínculo.",
@@ -87,31 +87,64 @@ export function OperationsScreen({ session }: { session: Session }) {
         </p>
       </header>
       {message ? <Notice tone="alert" title={message} /> : null}
+      <details className="agenda-settings">
+        <summary>Registrar un paciente</summary>
+        <PatientForm onSaved={() => void load()} />
+      </details>
+      <form
+        className="toolbar"
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setPage(1);
+          setQuery(draft.trim());
+        }}
+      >
+        <div className="field field--grow">
+          <label htmlFor="patient-management-query">
+            Buscar pacientes por nombre, DNI o correo
+          </label>
+          <input
+            id="patient-management-query"
+            type="search"
+            value={draft}
+            maxLength={120}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+        </div>
+        <button className="btn btn--primary">Buscar pacientes</button>
+      </form>
       <div className="board">
         <table className="board__table">
           <thead>
             <tr>
               <th>Paciente</th>
-              <th>Identificador</th>
+              <th>DNI</th>
               <th>Correo</th>
               <th>Responsable</th>
-              <th>Acción</th>
+              <th>Acciones</th>
             </tr>
           </thead>
           <tbody>
             {patients.map((p) => (
               <tr key={p.patientId}>
                 <th scope="row">{p.fullName}</th>
-                <td>{p.patientId}</td>
+                <td>{p.documentNumber || "Sin registrar"}</td>
                 <td>{p.email ?? "Sin correo"}</td>
                 <td>{p.responsiblePatientId || "—"}</td>
-                <td>
+                <td className="board__action">
                   <button
                     className="btn btn--secondary btn--small"
                     disabled={busy}
                     onClick={() => void verify(p)}
                   >
                     {p.enabled ? "Inhabilitar" : "Verificar y habilitar"}
+                  </button>
+                  <button
+                    className="btn btn--ghost btn--small"
+                    onClick={() => setEditing(p)}
+                  >
+                    Editar datos
                   </button>
                 </td>
               </tr>
@@ -123,7 +156,7 @@ export function OperationsScreen({ session }: { session: Session }) {
         <button
           className="btn btn--ghost"
           disabled={page === 1}
-          onClick={() => setPage(page - 1)}
+          onClick={() => setPage((p) => p - 1)}
         >
           Anterior
         </button>
@@ -136,31 +169,44 @@ export function OperationsScreen({ session }: { session: Session }) {
           Siguiente
         </button>
       </div>
+      {editing ? (
+        <PatientForm
+          key={editing.patientId}
+          patient={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            void load();
+          }}
+        />
+      ) : null}
       <form className="form" onSubmit={link}>
         <h2>Vincular responsable</h2>
-        <div className="field">
-          <label htmlFor="child-id">Identificador del menor</label>
-          <input
+        <div className="form-grid">
+          <PatientSearch
             id="child-id"
+            label="Menor"
             value={child}
-            onChange={(e) => setChild(e.target.value)}
-            required
+            onChange={setChild}
+            minorOnly
           />
-        </div>
-        <div className="field">
-          <label htmlFor="adult-id">
-            Identificador del adulto verificado (vacío para quitar)
-          </label>
-          <input
+          <PatientSearch
             id="adult-id"
+            label="Adulto responsable verificado"
             value={adult}
-            onChange={(e) => setAdult(e.target.value)}
+            onChange={setAdult}
+            adultOnly
           />
         </div>
-        <button className="btn btn--primary" disabled={busy}>
+        <p>
+          Para retirar el vínculo, elegí al menor y dejá el adulto sin
+          seleccionar.
+        </p>
+        <button className="btn btn--primary" disabled={busy || !child}>
           Registrar vínculo verificado
         </button>
       </form>
+      <StaffAppointments key={revision} session={session} />
       {session.role === "admin" ? <DoctorAdministration /> : null}
     </section>
   );

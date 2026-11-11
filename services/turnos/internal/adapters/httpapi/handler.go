@@ -88,6 +88,7 @@ func toDTO(a domain.Appointment) appointmentDTO {
 
 func Register(mux *http.ServeMux, uc UseCases) {
 	registerQuote(mux, uc)
+	registerPortal(mux, uc)
 	mux.HandleFunc("POST /appointments", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			PatientID string `json:"patientId"`
@@ -103,6 +104,23 @@ func Register(mux *http.ServeMux, uc UseCases) {
 			return
 		}
 		role := r.Header.Get("X-User-Role")
+		if p, ok := uc.(portalCases); ok {
+			start, e := time.Parse(time.RFC3339, in.StartAt)
+			if e != nil || in.DoctorID == "" {
+				sendError(w, 400, "INVALID_REQUEST", "doctorId y startAt (RFC3339) son obligatorios.")
+				return
+			}
+			a, e := p.PortalBook(r.Context(), role, patient, in.PatientID, in.DoctorID, start)
+			if e != nil {
+				rejected.WithLabelValues(app.RejectReason(e)).Inc()
+				mapError(w, e)
+				return
+			}
+			booked.Inc()
+			w.Header().Set("Location", "/appointments/"+a.ID)
+			sendJSON(w, 201, toPortalDTO(uc, a))
+			return
+		}
 		if role != "" && role != "patient" {
 			sendError(w, 403, "FORBIDDEN", "Solo los pacientes pueden reservar turnos.")
 			return
@@ -146,7 +164,14 @@ func Register(mux *http.ServeMux, uc UseCases) {
 			}
 			page = n
 		}
-		list, more, err := uc.ListAppointments(r.Context(), role, caller, page)
+		var list []domain.Appointment
+		var more bool
+		var err error
+		if p, ok := uc.(portalCases); ok {
+			list, more, err = p.PortalPage(r.Context(), role, caller, r.URL.Query().Get("patientId"), r.URL.Query().Get("doctorId"), page)
+		} else {
+			list, more, err = uc.ListAppointments(r.Context(), role, caller, page)
+		}
 
 		if err != nil {
 			mapError(w, err)
@@ -174,7 +199,9 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		role := r.Header.Get("X-User-Role")
 		var a domain.Appointment
 		var err error
-		if role == "doctor" {
+		if p, ok := uc.(portalCases); ok {
+			a, err = p.PortalGet(r.Context(), role, caller, r.PathValue("id"))
+		} else if role == "doctor" {
 			a, err = uc.GetForDoctor(r.Context(), caller, r.PathValue("id"))
 		} else {
 			a, err = uc.GetForPatient(r.Context(), caller, r.PathValue("id"))
@@ -207,7 +234,9 @@ func Register(mux *http.ServeMux, uc UseCases) {
 		role := r.Header.Get("X-User-Role")
 		var a domain.Appointment
 		var err error
-		if role == "doctor" {
+		if p, ok := uc.(portalCases); ok {
+			a, err = p.PortalCancel(r.Context(), role, caller, r.PathValue("id"), in.Reason)
+		} else if role == "doctor" {
 			a, err = uc.CancelForDoctor(r.Context(), caller, r.PathValue("id"), in.Reason)
 		} else {
 			a, err = uc.CancelForPatient(r.Context(), caller, r.PathValue("id"), in.Reason)
@@ -237,6 +266,18 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 
 func mapError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, app.ErrForbidden):
+		sendError(w, 403, "FORBIDDEN", "No tiene permiso para realizar esta operación.")
+	case errors.Is(err, app.ErrPatientMismatch):
+		sendError(w, 403, "PATIENT_MISMATCH", "El paciente debe ser usted o un menor con vínculo verificado.")
+	case errors.Is(err, domain.ErrMinorsNotAccepted):
+		sendError(w, 422, "MINORS_NOT_ACCEPTED", "El profesional no atiende menores de edad.")
+	case errors.Is(err, domain.ErrBlocked):
+		sendError(w, 409, "AGENDA_BLOCKED", "El profesional bloqueó ese horario.")
+	case errors.Is(err, domain.ErrInvalidAgenda):
+		sendError(w, 422, "INVALID_AGENDA", "Revisá los días, horarios, duración y fechas del bloqueo.")
+	case errors.Is(err, domain.ErrAgendaConflict):
+		sendError(w, 409, "AGENDA_CONFLICT", "Hay reservas vigentes fuera del nuevo horario. Conservá su agenda o registrá un bloqueo explícito.")
 	case errors.Is(err, domain.ErrOutsideSchedule):
 		sendError(w, 422, "OUTSIDE_SCHEDULE", "El horario está fuera de la agenda del médico.")
 	case errors.Is(err, domain.ErrInvalidReason):

@@ -28,7 +28,7 @@ Fecha: 10/11/2026. Rama: `fix/main-revision-completa`, creada desde `main` en `d
 
 Recepción y administración pueden verificar pacientes y registrar vínculos adulto–menor comprobando edad y habilitación. Historia Clínica tiene lectura por paciente objetivo, autorizada para médico con relación no cancelada o responsable adulto verificado de menor; un fallo de las dependencias no permite el acceso. La agenda del médico permite abrir la historia y registrar notas. Se añadieron controles de permisos y secretos de servicio separados de JWT.
 
-## Validación y límites
+## Validación y límites de la revisión inicial (F01–F17)
 
 - `go test -race ./...`: pasó después de corregir una carrera del fixture HTTP del proveedor.
 - `go vet ./...`: pasó.
@@ -43,16 +43,8 @@ Antes de actualizar datos a conservar, hacer backup. Inicio agrega columnas de p
 
 El volumen nombrado de RabbitMQ conserva la topología y mensajes tras recrear contenedores futuros. No migra por sí solo los mensajes de un broker anterior sin volumen: drenar o respaldar antes de recrearlo. No se debe usar `docker compose down -v` sobre datos que se quieran conservar.
 
-## Funciones que el informe distinguía como pendientes de alcance
+## Ampliación tras la auditoría funcional del 11/11/2026
 
-Corregir F01–F17 no completa automáticamente toda la especificación funcional. Siguen pendientes:
+Los pendientes de reprogramación atómica, edición/bloqueos de agenda, gestión de menores, alta/edición/asignación por recepción y recordatorios/bandeja tienen implementación y pruebas en la nueva rama. También se cierran JSON sobrante en Médicos, unicidad de DNI, restricción de atención a menores, notas futuras, cotización fuera de horario, horizonte/orden de búsqueda, mensaje de habilitación y métricas por gateway.
 
-- Reprogramación atómica que conserve el original si falla el destino.
-- Edición de horarios/duración por el médico, bloqueos y cancelación excepcional dentro de 24 h.
-- Reserva/cancelación/lista de turnos del menor por responsable y selector de menores en la interfaz.
-- Registro/edición general de datos, asignación de turnos y consulta de agenda por recepción.
-- Programador de recordatorios de 24 h con invalidación por cancelación/reprogramación.
-- Endpoint y pantalla de lectura de `portal_notices` (los avisos se persisten; la interfaz actual muestra cambios por polling).
-- Llamada coordinada al proveedor real con su URL y clave, y validación operativa de esta rama desplegada.
-
-Estas funciones no se presentan como defectos resueltos ni como evidencia de un portal completo. La rama conserva el alcance operativo existente y corrige los hallazgos identificados, con los complementos descritos arriba.
+Ver [trazabilidad, reglas, verificación y despliegue](AUDITORIA-FUNCIONAL-CORRECCIONES.md). La llamada coordinada al proveedor real y la validación operativa del VPS permanecen a cargo del equipo; no se acreditan mediante tests simulados.

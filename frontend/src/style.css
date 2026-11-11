@@ -22,12 +22,13 @@
   --danger-soft: #fdecea;
   --focus: #0b0d10;
 
-  --font-display: 'Barlow Condensed', 'Arial Narrow', sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  --font-body: 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-body: "Atkinson Hyperlegible", system-ui, sans-serif;
 
   --radius: 2px;
-  --shadow-doc: 0 1px 2px rgb(11 13 16 / 0.08), 0 8px 24px -12px rgb(11 13 16 / 0.18);
+  --shadow-doc:
+    0 1px 2px rgb(11 13 16 / 0.08), 0 8px 24px -12px rgb(11 13 16 / 0.18);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
   --space-1: 4px;
@@ -253,7 +254,9 @@ textarea {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   text-decoration: none;
-  transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out);
+  transition:
+    background-color 160ms var(--ease-out),
+    color 160ms var(--ease-out);
 }
 
 .rail__link:hover {
@@ -261,7 +264,7 @@ textarea {
   color: var(--surface);
 }
 
-.rail__link[aria-current='page'] {
+.rail__link[aria-current="page"] {
   background: var(--surface);
   color: var(--ink);
 }
@@ -310,7 +313,8 @@ textarea {
 
 .content {
   min-width: 0;
-  padding: var(--space-6) clamp(var(--space-4), 3vw, var(--space-7)) var(--space-7);
+  padding: var(--space-6) clamp(var(--space-4), 3vw, var(--space-7))
+    var(--space-7);
 }
 
 .content:focus {
@@ -358,7 +362,10 @@ textarea {
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out), border-color 160ms var(--ease-out);
+  transition:
+    background-color 160ms var(--ease-out),
+    color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out);
 }
 
 .btn--primary {
@@ -477,7 +484,7 @@ textarea {
   outline-offset: 0;
 }
 
-.field input[aria-invalid='true'] {
+.field input[aria-invalid="true"] {
   border-color: var(--danger);
 }
 
@@ -801,7 +808,12 @@ textarea {
   display: block;
   height: 22px;
   border-radius: var(--radius);
-  background: linear-gradient(90deg, var(--panel-2), var(--panel), var(--panel-2));
+  background: linear-gradient(
+    90deg,
+    var(--panel-2),
+    var(--panel),
+    var(--panel-2)
+  );
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
@@ -1004,7 +1016,10 @@ textarea {
   border-radius: var(--radius);
   background: var(--surface);
   cursor: pointer;
-  transition: background-color 140ms var(--ease-out), border-color 140ms var(--ease-out), color 140ms var(--ease-out);
+  transition:
+    background-color 140ms var(--ease-out),
+    border-color 140ms var(--ease-out),
+    color 140ms var(--ease-out);
 }
 
 .day__box {
@@ -1211,7 +1226,7 @@ textarea {
 }
 
 .pass__perforation::before {
-  content: '';
+  content: "";
   position: absolute;
   left: 14px;
   right: 14px;
@@ -1220,7 +1235,7 @@ textarea {
 }
 
 .pass__perforation::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0 -1px;
   background:
@@ -1304,7 +1319,12 @@ textarea {
 .timeline__skeleton {
   height: 220px;
   border-radius: var(--radius);
-  background: linear-gradient(90deg, var(--panel-2), var(--surface), var(--panel-2));
+  background: linear-gradient(
+    90deg,
+    var(--panel-2),
+    var(--surface),
+    var(--panel-2)
+  );
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
@@ -1511,7 +1531,7 @@ textarea {
   cursor: pointer;
 }
 
-.segmented button[aria-selected='true'] {
+.segmented button[aria-selected="true"] {
   background: var(--ink);
   color: var(--surface);
 }
@@ -1597,10 +1617,10 @@ textarea {
     display: grid;
     grid-template-columns: auto 1fr auto;
     grid-template-areas:
-      'time who who'
-      'date status energy'
-      'folio total total'
-      'action action action';
+      "time who who"
+      "date status energy"
+      "folio total total"
+      "action action action";
     gap: 6px var(--space-3);
     padding: var(--space-3) var(--space-4);
     border-bottom: 1px solid var(--line-soft);
@@ -1622,16 +1642,40 @@ textarea {
     padding: var(--space-5) var(--space-4) !important;
   }
 
-  .board--live .cell-time { grid-area: time; }
-  .board--live .cell-who { grid-area: who; min-width: 0; }
-  .board--live .cell-who .board__primary { white-space: normal; }
-  .board--live .cell-status { grid-area: status; }
-  .board--live .cell-date { grid-area: date; }
-  .board--live .cell-energy { grid-area: energy; justify-self: end; }
-  .board--live .cell-folio { grid-area: folio; }
-  .board--live .cell-total { grid-area: total; align-self: center; }
-  .board--live .cell-action { grid-area: action; justify-self: end; }
-  .board--live .cell-action:empty { display: none; }
+  .board--live .cell-time {
+    grid-area: time;
+  }
+  .board--live .cell-who {
+    grid-area: who;
+    min-width: 0;
+  }
+  .board--live .cell-who .board__primary {
+    white-space: normal;
+  }
+  .board--live .cell-status {
+    grid-area: status;
+  }
+  .board--live .cell-date {
+    grid-area: date;
+  }
+  .board--live .cell-energy {
+    grid-area: energy;
+    justify-self: end;
+  }
+  .board--live .cell-folio {
+    grid-area: folio;
+  }
+  .board--live .cell-total {
+    grid-area: total;
+    align-self: center;
+  }
+  .board--live .cell-action {
+    grid-area: action;
+    justify-self: end;
+  }
+  .board--live .cell-action:empty {
+    display: none;
+  }
 
   .rail__session .label,
   .rail__user {
@@ -1698,5 +1742,126 @@ textarea {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
+  }
+}
+
+/* Patient selection and the workflows shared by reception and doctors. */
+.patient-context {
+  padding: 0 var(--space-6);
+}
+.patient-context:empty {
+  display: none;
+}
+.patient-context > .field {
+  max-width: 34rem;
+  margin-bottom: var(--space-5);
+}
+.patient-context .notice {
+  margin-bottom: var(--space-5);
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: var(--space-4);
+}
+.form-grid .field {
+  min-width: 0;
+}
+.patient-form,
+.agenda-settings,
+.staff-appointments {
+  padding: var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  margin: var(--space-5) 0;
+}
+.patient-form h2,
+.agenda-settings h2,
+.staff-appointments h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+}
+.agenda-settings > summary {
+  cursor: pointer;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.agenda-settings form {
+  margin: var(--space-5) 0;
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--line-soft);
+}
+.check-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+.board__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.reschedule-panel {
+  max-width: 44rem;
+  margin: var(--space-5) auto;
+  border: 1px solid var(--line);
+}
+.staff-appointments > .form-grid {
+  margin-bottom: var(--space-4);
+}
+.staff-appointments .single {
+  padding: var(--space-5) 0 0;
+}
+.notice-list,
+.block-list {
+  list-style: none;
+  margin: var(--space-5) 0;
+  padding: 0;
+}
+.notice-item,
+.block-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  margin-bottom: var(--space-3);
+  overflow-wrap: anywhere;
+}
+.notice-item h2 {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  margin: 0;
+}
+.notice-item p {
+  margin: var(--space-2) 0;
+}
+.notice-item.is-unread {
+  border-left: 5px solid var(--ink);
+}
+.notice-item .btn,
+.block-list .btn {
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .patient-context {
+    padding: 0 var(--space-4);
+  }
+  .patient-form,
+  .agenda-settings,
+  .staff-appointments {
+    padding: var(--space-4);
+  }
+  .notice-item,
+  .block-list li {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: var(--space-4);
+  }
+  .board__actions {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

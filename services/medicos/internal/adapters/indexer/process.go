@@ -57,14 +57,14 @@ func Process(ctx context.Context, h Handler, routingKey string, body []byte) (re
 		}
 		err = h.IndexDoctor(ctx, data.DoctorID)
 		return classify("ok", env.OccurredAt, err)
-	case messaging.RoutingBooked, messaging.RoutingCancel:
+	case messaging.RoutingBooked, messaging.RoutingCancel, messaging.RoutingRescheduled:
 		var data bookingData
 		if err := json.Unmarshal(env.Data, &data); err != nil || data.TurnID == "" || data.DoctorID == "" ||
 			data.StartAt.IsZero() || !data.EndAt.After(data.StartAt) || data.AppointmentVersion < 1 {
 			return "", env.OccurredAt, unprocessable("invalid booking data")
 		}
 		dup, err := h.HandleBooking(ctx, app.Booking{TurnID: data.TurnID, DoctorID: data.DoctorID, Start: data.StartAt.UTC(),
-			End: data.EndAt.UTC(), Active: routingKey == messaging.RoutingBooked, Version: data.AppointmentVersion})
+			End: data.EndAt.UTC(), Active: routingKey != messaging.RoutingCancel, Version: data.AppointmentVersion})
 		result := "ok"
 		if dup {
 			result = "duplicate"

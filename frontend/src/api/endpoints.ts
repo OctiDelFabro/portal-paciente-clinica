@@ -14,6 +14,10 @@ import type {
   SearchQuery,
   SearchResult,
   Specialty,
+  PatientProfile,
+  DoctorSchedule,
+  AgendaBlock,
+  PortalNotice,
 } from "./types";
 
 const enc = encodeURIComponent;
@@ -30,6 +34,26 @@ function doctorFromWire(d: WireDoctor): Doctor {
 }
 
 export const pacientes = {
+  dependents: () =>
+    request<{ patients: PatientProfile[] }>("GET", "/api/pacientes/dependents"),
+  patients: (page = 1, q = "") =>
+    request<{ patients: PatientProfile[]; nextPage: number }>(
+      "GET",
+      `/api/pacientes/patients?page=${page}&q=${enc(q)}`,
+    ),
+  create: (
+    body: Omit<PatientProfile, "patientId" | "responsiblePatientId"> & {
+      password?: string;
+    },
+  ) => request<PatientProfile>("POST", "/api/pacientes/patients", body),
+  update: (
+    id: string,
+    body: Pick<
+      PatientProfile,
+      "fullName" | "email" | "documentNumber" | "birthDate"
+    >,
+  ) =>
+    request<PatientProfile>("PUT", `/api/pacientes/patients/${enc(id)}`, body),
   login: (email: string, password: string) =>
     request<LoginResponse>("POST", "/api/pacientes/auth/login", {
       email,
@@ -50,6 +74,30 @@ export const pacientes = {
 };
 
 export const medicos = {
+  catalog: async (q: SearchQuery): Promise<SearchResult> => {
+    let items: Doctor[] = [];
+    let page = 1;
+    let total = 0;
+    do {
+      const result = await medicos.search({
+        ...q,
+        sort: "name",
+        page,
+        size: 50,
+      });
+      total = result.total;
+      if (total > 1000)
+        throw new ApiError(
+          422,
+          "REFINE_SEARCH",
+          "Hay más de 1000 profesionales. Refiná el nombre o la especialidad.",
+        );
+      items = items.concat(result.items);
+      if (!result.items.length) break;
+      page++;
+    } while (items.length < total);
+    return { items, total, page: 1, size: items.length };
+  },
   search: (q: SearchQuery) => {
     const params = new URLSearchParams({
       sort: q.sort,
@@ -73,8 +121,42 @@ export const medicos = {
 };
 
 export const turnos = {
-  page: (page = 1) =>
-    request<AppointmentList>("GET", `/api/turnos/appointments?page=${page}`),
+  page: (page = 1, filters: { patientId?: string; doctorId?: string } = {}) =>
+    request<AppointmentList>(
+      "GET",
+      `/api/turnos/appointments?${new URLSearchParams({ page: String(page), ...(filters.patientId ? { patientId: filters.patientId } : {}), ...(filters.doctorId ? { doctorId: filters.doctorId } : {}) })}`,
+    ),
+  reschedule: (id: string, startAt: string) =>
+    request<Appointment>(
+      "POST",
+      `/api/turnos/appointments/${enc(id)}/reschedule`,
+      { startAt },
+    ),
+  schedule: (id: string) =>
+    request<DoctorSchedule>("GET", `/api/turnos/doctors/${enc(id)}/schedule`),
+  setSchedule: (id: string, body: DoctorSchedule) =>
+    request<DoctorSchedule>(
+      "PUT",
+      `/api/turnos/doctors/${enc(id)}/schedule`,
+      body,
+    ),
+  blocks: (id: string) =>
+    request<{ blocks: AgendaBlock[] }>(
+      "GET",
+      `/api/turnos/doctors/${enc(id)}/blocks`,
+    ),
+  block: (id: string, startAt: string, endAt: string, reason: string) =>
+    request<AgendaBlock>("POST", `/api/turnos/doctors/${enc(id)}/blocks`, {
+      startAt,
+      endAt,
+      reason,
+    }),
+  releaseBlock: (id: string, block: string) =>
+    request(
+      "POST",
+      `/api/turnos/doctors/${enc(id)}/blocks/${enc(block)}/release`,
+      {},
+    ),
   availability: (doctorId: string, date: string) =>
     request<Availability>(
       "GET",
@@ -96,16 +178,30 @@ export const turnos = {
       doctorId,
       startAt,
     }),
-  list: () =>
+  list: (patientId?: string) =>
     request<AppointmentList | Appointment[]>(
       "GET",
-      "/api/turnos/appointments",
+      `/api/turnos/appointments${patientId ? `?patientId=${enc(patientId)}` : ""}`,
     ).then(normalizeList),
   cancel: (appointmentId: string, reason: string) =>
     request<Appointment>(
       "POST",
       `/api/turnos/appointments/${enc(appointmentId)}/cancel`,
       { reason },
+    ),
+};
+
+export const notifications = {
+  page: (page = 1, patientId?: string) =>
+    request<{ notices: PortalNotice[]; nextPage: number }>(
+      "GET",
+      `/api/notifications/notices?page=${page}${patientId ? `&patientId=${enc(patientId)}` : ""}`,
+    ),
+  read: (id: string, patientId?: string) =>
+    request(
+      "POST",
+      `/api/notifications/notices/${enc(id)}/read${patientId ? `?patientId=${enc(patientId)}` : ""}`,
+      {},
     ),
 };
 

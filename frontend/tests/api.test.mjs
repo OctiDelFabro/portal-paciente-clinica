@@ -112,3 +112,57 @@ test("a late unauthorized reply cannot end a newer session", async () => {
     () => {},
   );
 });
+test("reception/dependent filters and reschedule endpoint retain target scope", async () => {
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, options });
+    return json({ appointments: [], notices: [] });
+  };
+  await api.turnos.page(2, { patientId: "pat-child", doctorId: "doc-1" });
+  const query = new URL(requests.at(-1).url, "http://test").searchParams;
+  assert.equal(query.get("patientId"), "pat-child");
+  assert.equal(query.get("doctorId"), "doc-1");
+  assert.equal(query.get("page"), "2");
+  await api.turnos.book("pat-child", "doc-1", "2026-12-01T09:00:00-03:00");
+  assert.equal(JSON.parse(requests.at(-1).options.body).patientId, "pat-child");
+  await api.turnos.reschedule("a-1", "2026-12-02T09:00:00-03:00");
+  assert.match(requests.at(-1).url, /appointments\/a-1\/reschedule$/);
+  assert.deepEqual(JSON.parse(requests.at(-1).options.body), {
+    startAt: "2026-12-02T09:00:00-03:00",
+  });
+  await api.notifications.page(1, "pat-child");
+  assert.equal(
+    new URL(requests.at(-1).url, "http://test").searchParams.get("patientId"),
+    "pat-child",
+  );
+});
+test("catalog loads every matching page before the screen orders availability", async () => {
+  const calls = [];
+  globalThis.fetch = async (raw) => {
+    const u = new URL(raw, "http://test");
+    calls.push(u);
+    const page = Number(u.searchParams.get("page"));
+    return json({
+      items: Array.from({ length: page === 1 ? 50 : 1 }, (_, i) => ({
+        id: `doc-${(page - 1) * 50 + i}`,
+        fullName: "Profesional",
+        specialties: [],
+      })),
+      total: 51,
+      page,
+      size: 50,
+    });
+  };
+  const r = await api.medicos.catalog({
+    q: "",
+    specialty: "",
+    acceptsMinors: false,
+    sort: "nextAvailable",
+    page: 3,
+    size: 8,
+  });
+  assert.equal(r.items.length, 51);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].searchParams.get("sort"), "name");
+  assert.equal(calls[1].searchParams.get("page"), "2");
+});

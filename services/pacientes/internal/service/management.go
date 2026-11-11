@@ -17,10 +17,20 @@ type ManagementStore interface {
 
 var ErrManagementUnavailable = errors.New("patient management unavailable")
 
-func (s *Service) Patients(ctx context.Context, pending bool, page int) ([]repository.Patient, error) {
+func (s *Service) Patients(ctx context.Context, pending bool, page int, query ...string) ([]repository.Patient, error) {
 	store, ok := s.Store.(ManagementStore)
 	if !ok {
 		return nil, ErrManagementUnavailable
+	}
+	if len(query) > 0 && query[0] != "" {
+		if len(query[0]) > 120 {
+			return nil, &ValidationError{"La búsqueda admite hasta 120 caracteres."}
+		}
+		if search, ok := s.Store.(interface {
+			SearchPatients(context.Context, bool, int, string) ([]repository.Patient, error)
+		}); ok {
+			return search.SearchPatients(ctx, pending, page, query[0])
+		}
 	}
 	return store.ListPatients(ctx, pending, page)
 }
@@ -38,7 +48,13 @@ func (s *Service) Verify(ctx context.Context, id string, enabled bool) error {
 	}
 	return store.SetVerification(ctx, id, enabled)
 }
-func adult(birth, now time.Time) bool { return !birth.IsZero() && !birth.AddDate(18, 0, 0).After(now) }
+func adult(birth, now time.Time) bool {
+	if birth.IsZero() {
+		return false
+	}
+	civil := time.Date(birth.Year(), birth.Month(), birth.Day(), 0, 0, 0, 0, clinicZone)
+	return !civil.AddDate(18, 0, 0).After(now.In(clinicZone))
+}
 func (s *Service) SetResponsible(ctx context.Context, id, responsible string) error {
 	child, err := s.Store.ByID(ctx, id)
 	if err != nil {

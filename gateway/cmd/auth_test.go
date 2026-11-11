@@ -218,7 +218,7 @@ func TestClientIdentityHeadersAreAlwaysStripped(t *testing.T) {
 		wantP, wantR string
 	}{
 		{"internal open login", internal, "POST", "/api/pacientes/auth/login", "", s.pacientes, "", ""},
-		{"internal open medicos GET", internal, "GET", "/api/medicos/doctors", "", s.medicos, "", ""},
+		{"internal open medicos GET", internal, "GET", "/api/medicos/search", "", s.medicos, "", ""},
 		{"internal authed turnos", internal, "GET", "/api/turnos/appointments", validToken(t, "p-7"), s.turnos, "p-7", "patient"},
 		{"internal authed historia", internal, "GET", "/api/historia/records", validToken(t, "p-7"), s.historia, "p-7", "patient"},
 		{"internal partner v1", internal, "POST", "/v1/appointments", "", s.turnos, "", ""},
@@ -257,7 +257,7 @@ func TestPortalRoutesApplyTheirAuthPolicy(t *testing.T) {
 		{"POST", "/api/pacientes/auth%2flogin", "", s.pacientes, 401, ""},
 		{"GET", "/api/pacientes/me", "", s.pacientes, 401, ""},
 		{"GET", "/api/pacientes/me", tok, s.pacientes, 200, "/me"},
-		{"GET", "/api/medicos/doctors", "", s.medicos, 200, "/doctors"},
+		{"GET", "/api/medicos/search", "", s.medicos, 200, "/search"},
 		{"POST", "/api/medicos/doctors", "", s.medicos, 401, ""},
 		{"POST", "/api/medicos/doctors", tok, s.medicos, 200, "/doctors"},
 		{"GET", "/api/turnos/appointments", "", s.turnos, 401, ""},
@@ -289,7 +289,7 @@ func TestOpenRoutesIgnoreInvalidTokens(t *testing.T) {
 	expired := validClaims()
 	expired["exp"] = time.Now().Add(-time.Minute).Unix()
 	tok := signHS(t, jwt.SigningMethodHS256, expired, testSecret)
-	for _, c := range [][2]string{{"POST", "/api/pacientes/auth/login"}, {"GET", "/api/medicos/doctors"}} {
+	for _, c := range [][2]string{{"POST", "/api/pacientes/auth/login"}, {"GET", "/api/medicos/search"}} {
 		if rec := do(h, c[0], c[1], tok, "X-Patient-Id", "p-evil"); rec.Code != 200 {
 			t.Fatalf("%s %s: %d", c[0], c[1], rec.Code)
 		}
@@ -368,6 +368,26 @@ func TestOnlyKnownRolesAreAccepted(t *testing.T) {
 		rec := do(s.cfg.internalHandler(), "GET", "/api/turnos/appointments", signHS(t, jwt.SigningMethodHS256, c, testSecret))
 		if rec.Code != want {
 			t.Errorf("role %q: status %d, want %d", role, rec.Code, want)
+		}
+	}
+}
+
+func TestServiceMetricsRequireActualAdminToken(t *testing.T) {
+	s := newStack(t)
+	h := s.cfg.routes()
+	claims := validClaims()
+	claims["role"] = "admin"
+	admin := signHS(t, jwt.SigningMethodHS256, claims, testSecret)
+	for _, svc := range []string{"medicos", "turnos", "pacientes", "historia", "notifications"} {
+		path := "/api/" + svc + "/metrics"
+		for _, tc := range []struct {
+			token string
+			want  int
+		}{{"", 401}, {validToken(t, "p-1"), 403}, {admin, 200}} {
+			rec := do(h, "GET", path, tc.token, "X-User-Role", "admin")
+			if rec.Code != tc.want {
+				t.Fatalf("%s token role: want %d got %d", path, tc.want, rec.Code)
+			}
 		}
 	}
 }

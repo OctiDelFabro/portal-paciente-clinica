@@ -38,7 +38,10 @@ function writeSeen(seen: Record<string, string>) {
  * A row whose status or energy estimate changed since it was last seen is
  * flagged until the patient acknowledges it.
  */
-export function useAppointments() {
+export function useAppointments(
+  filters: { patientId?: string; doctorId?: string } = {},
+) {
+  const { patientId, doctorId } = filters;
   const [items, setItems] = useState<Appointment[]>([]);
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [changed, setChanged] = useState<Set<string>>(new Set());
@@ -56,7 +59,7 @@ export function useAppointments() {
       let list: Appointment[] = [];
       let more = false;
       for (let page = 1; page <= pages; page++) {
-        const result = await turnos.page(page);
+        const result = await turnos.page(page, { patientId, doctorId });
         list.push(...result.appointments);
         more = !!result.nextPage;
         if (!more) break;
@@ -89,12 +92,15 @@ export function useAppointments() {
     } finally {
       if (ticket === requestId.current) setRefreshing(false);
     }
-  }, [pages]);
+  }, [pages, patientId, doctorId]);
 
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), POLL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      requestId.current++;
+      window.clearInterval(timer);
+    };
   }, [refresh]);
 
   const acknowledge = useCallback(
