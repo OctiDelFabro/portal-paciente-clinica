@@ -4,7 +4,7 @@ import "context"
 
 // SeedSpecialties and SeedDoctors are loaded on every start with INSERT IGNORE:
 // existing rows (including admin edits) are never overwritten. Doctor IDs match
-// the ones Turnos accepts for bookings (services/turnos/.../directory/seed.go).
+// the ones Turnos accepts for bookings (services/turnos/.../directory/agenda.go).
 var SeedSpecialties = []struct{ Code, Name string }{
 	{"cardiologia", "Cardiología"},
 	{"clinica-medica", "Clínica médica"},

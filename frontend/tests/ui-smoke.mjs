@@ -288,6 +288,7 @@ try {
   checks.push("reception login -> patient verification screen");
   await logout();
   await login("admin");
+  await page.getByLabel("Identificador del profesional").fill("doc-001");
   await page
     .getByRole("button", { name: "Consultar perfil", exact: true })
     .click();

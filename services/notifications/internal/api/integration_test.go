@@ -19,7 +19,6 @@ import (
 
 	"portal-paciente-clinica/internal/platform/messaging"
 	"portal-paciente-clinica/internal/platform/obs"
-	"portal-paciente-clinica/services/notifications/internal/contacts"
 	"portal-paciente-clinica/services/notifications/internal/repository"
 	"portal-paciente-clinica/services/notifications/internal/service"
 )
@@ -40,8 +39,16 @@ func startRepo(t *testing.T) *repository.Repo {
 	return repo
 }
 
+// fixedContacts is the test double for Pacientes: every patient has one
+// fictitious address. Production resolves contacts with contacts.HTTP.
+type fixedContacts struct{}
+
+func (fixedContacts) Emails(_ context.Context, patientID string) ([]string, error) {
+	return []string{patientID + "@example.test"}, nil
+}
+
 func newService(repo *repository.Repo) *service.Service {
-	return &service.Service{Repo: repo, Contacts: contacts.Seed{}, Now: time.Now, NewID: obs.NewID, TTL: 24 * time.Hour,
+	return &service.Service{Repo: repo, Contacts: fixedContacts{}, Now: time.Now, NewID: obs.NewID, TTL: 24 * time.Hour,
 		Breaker: &service.Breaker{Threshold: 5, Cooldown: time.Second}}
 }
 
@@ -119,7 +126,7 @@ func TestConsumerIsIdempotentAndDeadLettersPoison(t *testing.T) {
 	})
 	_ = repo.DB.QueryRow("SELECT COUNT(*) FROM notifications").Scan(&notifs)
 	_ = repo.DB.QueryRow("SELECT COUNT(*) FROM portal_notices").Scan(&notices)
-	// pat-003 es menor sin correo: un solo correo, al responsable.
+	// fixedContacts devuelve una dirección: un solo correo y un aviso.
 	if notifs != 1 || notices != 1 {
 		t.Fatalf("want 1 notification and 1 notice, got %d and %d", notifs, notices)
 	}

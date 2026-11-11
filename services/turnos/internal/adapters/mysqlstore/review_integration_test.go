@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"portal-paciente-clinica/internal/platform/obs"
-	"portal-paciente-clinica/services/turnos/internal/adapters/directory"
+	"portal-paciente-clinica/services/turnos/internal/adapters/directory/fixture"
 	"portal-paciente-clinica/services/turnos/internal/app"
 	"portal-paciente-clinica/services/turnos/internal/domain"
 	"strings"
@@ -19,7 +19,7 @@ func TestReviewPaginationUnicodeReasonAndFrozenTariff(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	tariff := domain.Tariff{BaseCents: 2500000, CentsPerKWh: 18000}
-	svc := &app.Service{Store: store, Directory: directory.Seed{}, Now: func() time.Time { return now }, NewID: obs.NewID, Tariff: tariff}
+	svc := &app.Service{Store: store, Directory: fixture.Directory{}, Now: func() time.Time { return now }, NewID: obs.NewID, Tariff: tariff}
 	a, err := svc.Book(ctx, "pat-001", "doc-001", nextWorkday(now).Add(9*time.Hour))
 	if err != nil {
 		t.Fatal(err)
