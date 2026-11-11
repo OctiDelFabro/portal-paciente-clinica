@@ -11,7 +11,7 @@ Turnos ya es apto para varias instancias:
 ## Decisión
 | Aspecto | Decisión |
 |---|---|
-| Servicio | Turnos, con `deploy.replicas: 2` en compose (`turnos-1`, `turnos-2`). |
+| Servicio | Turnos, con dos servicios en compose (`turnos-1` y `turnos-2`) que comparten configuración mediante un anclaje YAML (`<<: *turnos`). |
 | Balanceador | El gateway, con lista de instancias por configuración (`TURNOS_URLS`). |
 | Estrategia | Round-robin entre instancias sanas. |
 | Detección | Chequeo activo de `GET /healthz` cada 2 s, timeout 500 ms. Dos fallas seguidas la marcan caída y una respuesta OK la reincorpora. También se marca caída si una solicitud real falla por conexión. |

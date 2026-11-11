@@ -1,6 +1,6 @@
 flowchart TB
- usuarios["Pacientes, médicos y recepción"] --> web["Frontend React + TypeScript"]
- web -->|"HTTP/JSON"| gw["API Gateway Go"]
+ usuarios["Pacientes, médicos, recepción y administración"] --> web["Frontend React + TypeScript"]
+ web -->|"HTTP/JSON + JWT"| gw["API Gateway Go: valida JWT emitido por Pacientes"]
  consumidor["Servicio consumidor externo"] -->|"HTTP /v1 + X-API-Key"| gw
  subgraph servicios["Microservicios propios"]
   t["Turnos: agenda y reservas"]
@@ -19,16 +19,20 @@ flowchart TB
  h -->|"Validar vínculos HTTP"| p
  h -->|"Validar relación médico-paciente HTTP"| t
  n -->|"Obtener contactos HTTP"| p
+ n -->|"Estado del turno HTTP"| t
+ t -->|"Estimación energética HTTP (circuito)"| prov["Proveedor externo RenewableEnergy (Render)"]
  t -->|"Outbox → eventos turnos.*.v1"| mq["RabbitMQ portal.events.v1 + DLQ"]
  mq -->|"Consumo idempotente (inbox)"| n
+ mq -->|"Eventos de turnos (inbox)"| h
+ mq -->|"Indexación de perfiles"| m
  t --> dt[("MySQL Turnos")]
  p --> dp[("MySQL Pacientes")]
  m --> dm[("MySQL Médicos")]
  h --> dh[("MongoDB Historia clínica")]
  n --> dn[("MySQL Notificaciones")]
- t -.->|"Lectura derivada: flujo por validar"| redis["Redis"]
+ t -->|"Caché de disponibilidad (cache-aside, TTL 30 s)"| redis["Redis"]
  m -->|"Proyección de perfiles"| os["OpenSearch"]
- n -->|"Correo SMTP"| correo["Mailpit local / proveedor de correo pendiente"]
+ n -->|"Correo SMTP"| correo["Mailpit (SMTP)"]
  subgraph obs["Observabilidad"]
   jaeger["Jaeger: trazas OTLP"]
   prom["Prometheus: métricas"]
@@ -41,5 +45,4 @@ flowchart TB
  prom -.->|"Scrape /metrics"| t
  prom -.->|"Scrape /metrics"| n
  graf -->|"Consultas PromQL"| prom
- gw -->|"Verificación de identidad"| idp["Proveedor de identidad pendiente"]
 

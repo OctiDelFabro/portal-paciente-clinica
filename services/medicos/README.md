@@ -40,7 +40,7 @@ You can also rebuild the index from the command line: `go run ./services/medicos
 | `HTTP_ADDR` | `0.0.0.0:8083` | `127.0.0.1:8083` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://jaeger:4318` | tracing as in the other services |
 
-The schema and the seed (`doc-001`, `doc-002`, which are the IDs Turnos accepts) are applied on every start. Rows that already exist are left as they are.
+The schema and the seed (`doc-001` to `doc-004`, the same IDs whose agendas Turnos knows) are applied on every start. Rows that already exist are left as they are.
 
 ## Messaging
 

@@ -9,7 +9,7 @@ web
 ## Users
 - Patients of a single clinic who look for a doctor, book, review and cancel their own appointments, and read their clinical history.
 - Doctors who review the appointments assigned to them and record an encounter note in a patient's clinical history.
-- Reception exists in the domain (docs/SPEC.md) but is out of scope for the frontend of the group presentation.
+- Reception staff who verify patient accounts and guardian relationships, and administrators who edit staff and patient profiles (docs/SPEC.md).
 
 ## Product Purpose
 Patient portal of a clinic, built as a university microservices project (Arquitectura de Software 2026). The portal must cover the whole journey "from the user's entry to the shared capability": sign-in, doctor search, availability, booking with its price, own appointments and clinical history. Success for this delivery: the flow runs end to end during the group presentation and makes the architecture visible (search engine, cache, provider integration, degradation when a dependency fails).

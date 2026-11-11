@@ -15,7 +15,7 @@ El contenedor oficial de MySQL (`mysql:8.4`) solo ejecuta los scripts ubicados e
 
 ### Solución y Aprendizaje
 1. Se diseñaron scripts de aprovisionamiento de bases y usuarios estrictamente idempotentes (`CREATE DATABASE IF NOT EXISTS`, `CREATE USER IF NOT EXISTS`, `GRANT ALL ON ...`).
-2. Se implementó un comando de reconciliación post-arranque que reaplica los permisos dentro del contenedor sin requerir borrar los volúmenes de datos existentes.
+2. Para volúmenes existentes, el procedimiento documentado en `infra/mysql-users.sh` es crear los usuarios a mano dentro del contenedor (sin borrar datos) o recrear el volumen con `docker compose down -v`. No hay un comando automático de reconciliación.
 3. **Lección**: Nunca depender de scripts de entrada de Docker para migraciones continuas en bases de datos persistentes. La evolución del esquema debe ser gestionada por los propios microservicios al conectar (`CREATE TABLE IF NOT EXISTS` y verificación en `information_schema.COLUMNS`).
 
 ---
@@ -49,7 +49,7 @@ Bajo el nivel de aislamiento predeterminado de MySQL InnoDB (`REPEATABLE READ`),
 ### Solución y Aprendizaje
 1. Se configuró explícitamente el nivel de aislamiento en `READ COMMITTED` para los almacenes transaccionales de Notificaciones y Turnos. En este nivel, InnoDB no utiliza *gap locks* para sentencias de lectura o comprobación de unicidad.
 2. Para el flujo crítico de Turnos, se reemplazó la dependencia de bloqueos implícitos por un esquema determinista de bloqueo pesimista (`booking_locks` con `SELECT ... FOR UPDATE` ordenado alfabéticamente).
-3. Se añadió un middleware de reintento automático con backoff ante errores 1213 transitorios.
+3. Se añadió un reintento automático de la transacción completa ante errores 1213 transitorios (`InTx`, hasta 3 reintentos inmediatos, sin espera entre intentos).
 4. **Lección**: Para sistemas de alto volumen con inserciones concurrentes e idempotencia, `REPEATABLE READ` introduce contención nociva. `READ COMMITTED` junto con bloqueos pesimistas ordenados en la capa de aplicación ofrece un throughput significativamente superior y predecible.
 
 ---
@@ -64,7 +64,7 @@ Al iniciar los contenedores de Docker en Windows, el script `mysql-users.sh` abo
 Git en Windows, con la configuración por defecto `core.autocrlf=true`, convertía los saltos de línea de los archivos a formato DOS (`\r\n`). Al montarse el script dentro del contenedor Linux Alpine, el intérprete `/bin/sh` interpretaba el retorno de carro `\r` como parte del argumento del comando (`set -eu\r`), el cual no es un flag válido.
 
 ### Solución y Aprendizaje
-1. Se convirtieron los scripts a saltos de línea UNIX (`\n`) y se configuró `.gitattributes` en la raíz del repositorio para garantizar que todos los archivos `.sh`, `.sql` y archivos de configuración mantengan saltos LF independientemente del sistema operativo del desarrollador.
+1. Se convirtieron los scripts a saltos de línea UNIX (`\n`) y se configuró `.gitattributes` en la raíz del repositorio con `*.sh text eol=lf`, para garantizar que los scripts que se ejecutan dentro de contenedores Linux mantengan saltos LF independientemente del sistema operativo del desarrollador.
 2. **Lección**: En proyectos multiplataforma con contenedores Docker montando volúmenes desde el host, los finales de línea deben fijarse rígidamente en el control de versiones.
 
 ---

@@ -18,7 +18,7 @@ RF-01: el paciente busca médicos y especialidades. El enunciado pide un motor d
 | `profileVersion` | long | Descarta actualizaciones que llegan fuera de orden. |
 
 **Consulta:** `GET /api/medicos/search?q=&specialty=&acceptsMinors=&sort=name|nextAvailable&page=&size=`
-- Paginación: `size` ≤ 50, `from + size` ≤ 1000; más allá se usa `search_after`.
+- Paginación: `size` ≤ 50, `from + size` ≤ 1000; más allá se responde 422 (no se implementó `search_after`).
 - Orden: `name` (alfabético) o `nextAvailable` (más cercano primero).
 - No se indexan datos de pacientes ni información clínica.
 

@@ -25,7 +25,7 @@ Reached through the gateway as `/api/historia/*` (prefix stripped, JWT required)
 | `GET /healthz` | anyone | `200 {"status":"ok","mongo":"up"}` or `503 {"status":"degraded","mongo":"down"}` |
 | `GET /records/me` | verified patient | `200 {"patientId","records":[...]}`: the caller's encounters, newest `startAt` first, with notes; `401` without `X-Patient-Id` |
 | `GET /records/patients/{patientId}/timeline` | verified guardian of a minor or doctor with an uncancelled appointment | `200` timeline, `403` without relationship, `503` if authorization dependencies fail |
-| `POST /records/{appointmentId}/notes` | `X-User-Role: doctor` | body `{"text":"..."}` (1–4000 characters); `201` note; `401` no identity; `403` other roles; `400` invalid JSON; `422` invalid text; `404` unknown appointment; `409 ENCOUNTER_CANCELLED` |
+| `POST /records/{appointmentId}/notes` | `X-User-Role: doctor` | body `{"text":"..."}` (1–4000 characters); `201` note; `401` no identity; `403` other roles; `400` invalid JSON; `422` invalid text; `422 APPOINTMENT_NOT_STARTED` before the appointment starts; `404` unknown appointment; `409 ENCOUNTER_CANCELLED`; `503 AUTHORIZATION_UNAVAILABLE` if authorization dependencies fail |
 | `GET /metrics` | Prometheus | `events_consumed_total{result}`, `historia_dlq_depth`, HTTP metrics |
 
 ## Data model
@@ -53,6 +53,6 @@ go test -tags integration ./services/historia-clinica/...    # real MongoDB and 
 ## Known limitations
 
 - Notes require the assigned doctor identity, current verification and an uncancelled clinical relationship. Reception and administration cannot read clinical content.
-- `GET /records/me` is the caller’s timeline. The patient-specific endpoint also allows a verified adult with a currently verified minor relationship; the general minor selector in the frontend remains pending.
+- `GET /records/me` is the caller’s timeline. The patient-specific endpoint also allows a verified adult with a currently verified minor relationship; the frontend offers a selector for verified minors.
 - Notes cannot be corrected or deleted; there is no retention or backup policy yet (ADR-003).
-- Rescheduling events are not consumed because Turnos does not publish them yet.
+- `turnos.reprogramado.v1` is not consumed: a reschedule also arrives as the new booking plus the cancellation of the original, which keeps the clinical record consistent.

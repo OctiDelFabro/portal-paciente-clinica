@@ -1,5 +1,5 @@
 # ADR-007 — Caché
-**Decisión D7 · Estado: aceptada, implementada y validada con k6 (D13).** Redis cachea la disponibilidad de un médico por día, leída en Turnos. Vigencia de 30 s e invalidación explícita al reservar o cancelar.
+**Decisión D7 · Estado: aceptada e implementada. Las cifras k6 son antecedentes reportados, sin reejecución validada (ver [VERIFICACION](../VERIFICACION.md#mediciones-anteriores)).** Redis cachea la disponibilidad de un médico por día, leída en Turnos. Vigencia de 30 s e invalidación explícita al reservar o cancelar.
 
 ## Contexto
 La característica relevante del dominio son los **picos de demanda**: cuando se abre una agenda, muchos pacientes consultan la disponibilidad del mismo médico a la vez. Calcular la disponibilidad requiere leer la configuración de agenda y los turnos activos del día. Es la lectura más repetida y más costosa del flujo principal, y compite por MySQL con las reservas, que sí necesitan bloqueos (D4).
@@ -14,8 +14,10 @@ La característica relevante del dominio son los **picos de demanda**: cuando se
 | Autoridad | La caché **nunca** confirma una reserva: `POST /appointments` siempre valida bajo bloqueo en MySQL (D3/D4). Una franja mostrada como libre puede estar ocupada; el resultado es 409 `SLOT_UNAVAILABLE`. |
 | Falla de Redis | Se lee MySQL directamente con timeout de 100 ms hacia Redis, log WARN `cache.unavailable` y métrica. El portal se degrada en latencia, no en función. |
 
-## Medición y Resultados k6 (Evidencia empírica)
-Se ejecutó la prueba de carga `infra/k6/availability.js` a una tasa de **200 solicitudes/s** sostenidas durante 15 s (3.000 solicitudes) sobre `GET /doctors/{id}/availability?date=...`, comparando el comportamiento con la caché activada y desactivada:
+## Medición k6 (antecedente reportado)
+> Estas cifras provienen de una ejecución anterior sin trazas crudas conservadas. Los totales no cierran entre sí (2.720 hits + 7 misses = 2.727; 2.947 respuestas OK; 3.000 solicitudes planificadas), por lo que se presentan como indicio y no como medición validada. Para afirmarlas hay que reejecutar `infra/k6/availability.js` y adjuntar la salida.
+
+La prueba `infra/k6/availability.js` apunta a **200 solicitudes/s** durante 15 s (3.000 solicitudes planificadas) sobre `GET /doctors/{id}/availability?date=...`, comparando el comportamiento con la caché activada y desactivada:
 
 | Métrica | Sin Caché (`CACHE_ENABLED=false`) | Con Caché (`CACHE_ENABLED=true`) | Variación / Impacto |
 |---|---|---|---|
@@ -26,7 +28,7 @@ Se ejecutó la prueba de carga `infra/k6/availability.js` a una tasa de **200 so
 | **Tasa de errores HTTP** | 0.00 % (3.000/3.000 OK) | 0.00 % (2.947/2.947 OK) | Confiabilidad total en ambos modos |
 
 Métricas Prometheus verificadas: `cache_requests_total{result="hit"}`, `cache_requests_total{result="miss"}` y `http_request_duration_seconds{route="GET /doctors/{id}/availability"}`.
-La evidencia confirma la hipótesis: la caché absorbe el 99.7 % de las lecturas repetidas de disponibilidad durante picos, protegiendo las conexiones del pool de MySQL para las escrituras transaccionales.
+El indicio es consistente con la hipótesis: la caché absorbería la mayoría de las lecturas repetidas de disponibilidad durante picos, protegiendo las conexiones del pool de MySQL para las escrituras transaccionales.
 
 
 ## Alternativas consideradas
@@ -54,4 +56,4 @@ Se acepta mostrar una disponibilidad desactualizada hasta 30 s en el peor caso (
 - Portal y socios validan horarios, duración, edad, habilitación, bloqueo y superposición en backend; la cotización valida disponibilidad del médico pero no reserva.
 - Carrera conocida del patrón: una lectura que empezó antes del commit puede guardar un valor viejo después de la invalidación. Lo acota el TTL de 30 s; la reserva sigue validándose bajo bloqueo en MySQL y responde 409 `SLOT_UNAVAILABLE`.
 - Un valor cacheado se calculó con la hora de ese momento: una franja que deja de cumplir las 24 h puede mostrarse hasta 30 s más y la reserva responde 422 `LEAD_TIME_TOO_SHORT`.
-- Pendiente: resultados k6 con caché desactivada y activada, tasa de aciertos y justificación de `cache_requests_total` en ADR-011.
+- Pendiente: reejecutar k6 con caché desactivada y activada y conservar la salida cruda; las cifras de esta sección son antecedentes.

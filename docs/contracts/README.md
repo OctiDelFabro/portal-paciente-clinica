@@ -4,7 +4,7 @@ Permite que un sistema de otro grupo **reserve, consulte y cancele turnos médic
 - Contrato formal: [turnos-partner-v1.openapi.json](turnos-partner-v1.openapi.json), OpenAPI 3.1.1, versión de API **1.0.0**.
 - Decisión y justificación: [ADR-008](../adr/ADR-008-Contrato-propio.md).
 - Consumidor asignado: **Car Cruds** (concesionaria, servicio Empleados).
-- Estado: desplegado y verificado en producción. URL pública: `https://api-turnos.srv1779429.hstgr.cloud`; salud: [`/healthz`](https://api-turnos.srv1779429.hstgr.cloud/healthz). Todos los endpoints de esta capacidad llevan el prefijo `/v1`.
+- Estado: desplegado en producción; verificados `/healthz` (200) y el rechazo sin clave (401). No se ejecutaron reservas facturadas contra producción. URL pública: `https://api-turnos.srv1779429.hstgr.cloud`; salud: [`/healthz`](https://api-turnos.srv1779429.hstgr.cloud/healthz). Todos los endpoints de esta capacidad llevan el prefijo `/v1`.
 
 ## Conexión al despliegue
 - **Base URL:** `https://api-turnos.srv1779429.hstgr.cloud/v1`
@@ -116,6 +116,7 @@ Formato: `{"error":{"code":"…","message":"…"}}`. Decidir por `code`, no por 
 | 409 | `ALREADY_CANCELLED` | El turno ya estaba cancelado. |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | Enviar `Content-Type: application/json`. |
 | 422 | `LEAD_TIME_TOO_SHORT` | Faltan menos de 24 h para el turno (reservar o cancelar). |
+| 422 | `OUTSIDE_SCHEDULE` | El horario pedido no está dentro de la agenda del médico. Consultar la disponibilidad y elegir otra franja. |
 | 429 | `RATE_LIMITED` | Esperar `Retry-After`. |
 | 503 | `UNAVAILABLE` | Resultado no confirmado. Repetir con la **misma** `Idempotency-Key`, o consultar el turno. |
 | 502 · 504 | `UPSTREAM_UNAVAILABLE` · `UPSTREAM_TIMEOUT` | Gateway sin respuesta del servicio. Tratar igual que 503. |
@@ -131,7 +132,7 @@ Su adaptador (`services/employees/adapters/clinic`, commit `9eec277`) se constru
 | Veían cualquier turno | Solo los propios; un turno ajeno da `404` |
 | — | Nuevos: `GET /v1/doctors`, `POST /v1/appointments/{id}/cancel`, `GET /v1/usage` |
 
-**Pacientes disponibles hoy** (datos semilla, hasta que el servicio Pacientes esté operativo): `pat-001` y `pat-003` habilitados, `pat-002` registrado sin habilitar. El alta de empleados reales como pacientes se coordina con la clínica.
+**Pacientes de demostración** (sembrados por el servicio Pacientes): `pat-001` y `pat-003` habilitados, `pat-002` registrado sin habilitar. El alta de empleados reales como pacientes se coordina con la clínica.
 
 ## Ejecutar y probar en local
 ```powershell
@@ -153,7 +154,7 @@ Configuración del proveedor (servicio Turnos):
 
 Un valor inválido de precio, moneda o límite impide iniciar Turnos.
 
-**Al desplegar se publica solamente `PUBLIC_HTTP_ADDR` del gateway** (puerto `8088` en compose). `HTTP_ADDR` (`8080`) es la red interna del portal: atiende además `/api/turnos/*`, que todavía no tiene autenticación del portal, y `/metrics`. Nunca exponerlo fuera de esa red, tampoco mediante un túnel.
+**Para socios se publica solamente `PUBLIC_HTTP_ADDR` del gateway** (puerto `8088` en compose: `/v1/*` y `/healthz`). `HTTP_ADDR` (`8080`) atiende el portal: `/api/*` exige el JWT del portal (ADR-014) y además expone `/metrics`. En Hostinger, Traefik enruta solo `PathPrefix(/api)` a `8080`; `/metrics` nunca se publica, tampoco mediante un túnel.
 
 Ejemplos procesables en [examples/turnos](examples/turnos).
 
@@ -165,7 +166,7 @@ Ejemplos procesables en [examples/turnos](examples/turnos).
 | 1.0.0 | Versión inicial (23/10/2026): reservas con clave por consumidor, idempotencia, aislamiento y facturación. |
 
 ## Límites conocidos
-- Médicos y pacientes provienen de datos semilla; no hay alta de pacientes desde esta API.
+- Médicos y pacientes provienen de los servicios Médicos y Pacientes; no hay alta de pacientes desde esta API.
 - No hay reprogramación: cancelar y reservar de nuevo, con otra clave (se factura de nuevo).
 - No hay consulta de disponibilidad: un horario ocupado se informa con `409 SLOT_UNAVAILABLE`.
 - El límite de solicitudes es por instancia de Turnos.

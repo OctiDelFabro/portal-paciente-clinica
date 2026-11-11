@@ -12,9 +12,9 @@
 | Notificaciones → evento mal formado | Va directo a la DLQ, sin reintentos inútiles | Clasificación `ErrUnprocessable` | Implementado |
 | Notificaciones → proveedor de correo | Reintentos a los 5/30/120 s y después `failed`. Tras 5 fallas seguidas se abre el circuito 30 s y no se consumen intentos | Timeout 5 s + backoff + circuit breaker | Implementado |
 | Notificaciones → RabbitMQ | Reconexión cada 3 s; los eventos se acumulan en la cola o en la outbox de Turnos | Bucle de reconexión | Implementado |
-| Turnos → Pacientes / Médicos | Sin validación no hay reserva: 503 con mensaje claro | Timeout 2 s, sin reintento de escrituras | Pendiente (hoy adaptador semilla) |
-| Turnos → Redis (D7) | Lectura directa de MySQL, mayor latencia | Timeout 100 ms + fallback | Pendiente |
-| Médicos → OpenSearch (D6) | Búsqueda 503; el resto del portal sigue | Timeout + mensaje | Pendiente |
+| Turnos → Pacientes / Médicos | Sin validación no hay reserva: 503 con mensaje claro | Timeout 400 ms por llamada interna, sin reintento de escrituras; 503 `DIRECTORY_UNAVAILABLE` | Implementado |
+| Turnos → Redis (D7) | Lectura directa de MySQL, mayor latencia | Timeout 100 ms + fallback (ADR-007) | Implementado |
+| Médicos → OpenSearch (D6) | Búsqueda 503; el resto del portal sigue | 503 `SEARCH_UNAVAILABLE` (ADR-006) | Implementado |
 
 ## Principios
 - **No perder:** todo evento nace en la misma transacción que el cambio (outbox) y se reconoce solo después de persistirlo (inbox). Ante la duda se prefiere un duplicado, que absorbe la idempotencia, a una pérdida.
@@ -22,7 +22,7 @@
 - **No reintentar escrituras sin idempotencia:** una respuesta ausente no prueba que la escritura falló (D5).
 - **Degradar, no caer:** los avisos pueden atrasarse; las reservas no se detienen por un problema de correo o de broker.
 
-## Caída provocada (para `docs/POSTMORTEM.md`)
+## Caída provocada (ver [`POSTMORTEM.md`](../../POSTMORTEM.md))
 Ensayo planificado para la jornada de fallas:
 1. Generar reservas con k6 a carga constante.
 2. Detener RabbitMQ durante 2 minutos.

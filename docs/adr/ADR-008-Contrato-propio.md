@@ -31,12 +31,12 @@ La implementación vive en el propio servicio Turnos (adaptador `httpapi/partner
 - **Autenticación en el gateway:** obligaría al gateway a conocer la propiedad de los turnos; el servicio dueño ya la tiene en su base.
 
 ## Compatibilidad y publicación
-`/v1` es la versión mayor; cambios incompatibles exigen `/v2` y guía de migración. La URL pública se entrega a cada consumidor con su clave. La ruta interna `/api/turnos` **no** es parte del contrato y todavía no tiene autenticación del portal. Por eso el gateway tiene dos listeners: `PUBLIC_HTTP_ADDR` (el único que se publica) atiende solo `/v1/*` y `/healthz`, y `HTTP_ADDR` queda en la red interna con `/api/turnos/*` y `/metrics`. Se eligió separar por red y no filtrar por IP de origen porque detrás de un túnel o proxy inverso todas las solicitudes llegan con la IP del proxy (por ejemplo `127.0.0.1`) y el filtro se saltearía. Cuando exista la autenticación del portal, `/api/turnos` podrá pasar al listener público.
+`/v1` es la versión mayor; cambios incompatibles exigen `/v2` y guía de migración. La URL pública se entrega a cada consumidor con su clave. La ruta `/api/turnos` del portal **no** es parte del contrato y exige el JWT del portal (ADR-014). Por eso el gateway tiene dos listeners: `PUBLIC_HTTP_ADDR` atiende solo `/v1/*` (Turnos para socios y la API de Notificaciones, cada una con su clave) y `/healthz`; `HTTP_ADDR` atiende `/api/*` con JWT y `/metrics`. En Hostinger, Traefik enruta `/v1` y `/healthz` a `PUBLIC_HTTP_ADDR` y solo `/api` a `HTTP_ADDR`; `/metrics` nunca se publica. Se eligió separar por red y no filtrar por IP de origen porque detrás de un túnel o proxy inverso todas las solicitudes llegan con la IP del proxy (por ejemplo `127.0.0.1`) y el filtro se saltearía. Con la autenticación del portal implementada, `/api/*` se publica por Traefik y mantiene la separación de listeners.
 
 ## Consecuencias y límites
 - Nueva tabla `partner_bookings` (dueño, clave, huella, precio, fecha). No modifica `appointments`.
 - Una reserva de un socio publica el mismo evento `turnos.reservado.v1`; Notificaciones envía el correo al paciente como en cualquier reserva.
-- Médicos y pacientes siguen siendo datos semilla: el alta de empleados reales como pacientes queda pendiente del servicio Pacientes.
+- Médicos y pacientes provienen de los servicios Médicos y Pacientes (cuentas de demostración sembradas). Esta API no da de alta pacientes: el alta de empleados como pacientes se hace por el portal y la verificación de recepción.
 - Sin reprogramación ni consulta de disponibilidad en v1.
 - El límite de solicitudes es por instancia.
 - Verificación: tests unitarios de app y HTTP, test de integración con MySQL real (12 solicitudes concurrentes con la misma clave crean un turno y un cargo) y `scripts/check_turnos_contract.py` contra el stack completo.

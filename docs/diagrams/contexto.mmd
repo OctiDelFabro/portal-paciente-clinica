@@ -2,16 +2,15 @@ flowchart TB
  p["Paciente / responsable"]
  m["Médico"]
  r["Recepción"]
+ a["Administración"]
  portal["Portal paciente de clínica"]
  consumidor["Car Cruds: servicio Empleados"]
- proveedor["Grupo proveedor: pendiente de asignación"]
- correo["Proveedor de correo: pendiente"]
- identidad["Proveedor de identidad: pendiente"]
+ proveedor["ArquitecturasoftwareRenewableEnergy: estimación de consumo energético (Render)"]
+ correo["Correo SMTP (Mailpit en compose)"]
  p -->|"Turnos e historia clínica"| portal
  m -->|"Agenda y atenciones"| portal
  r -->|"Pacientes, vínculos y turnos"| portal
+ a -->|"Perfiles de personal y pacientes"| portal
  consumidor -->|"API HTTP de turnos (X-API-Key, facturada)"| portal
- portal -.->|"Capacidad a definir"| proveedor
+ portal -->|"HTTP: costo energético por turno (circuito + fallback)"| proveedor
  portal -->|"Envío de correos"| correo
- portal -->|"Autenticación"| identidad
-

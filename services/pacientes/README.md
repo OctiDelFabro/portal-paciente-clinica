@@ -12,6 +12,13 @@ Behind the gateway these live under `/api/pacientes/*` (prefix stripped). `/auth
 | `POST /auth/login` | `{email, password}` → `200 {accessToken, tokenType: "Bearer", expiresIn, patient: {patientId, fullName, email}}` |
 | `GET /me` | Profile of `X-Patient-Id`: `patientId, fullName, email, documentNumber, birthDate, enabled, responsiblePatientId`. `401` without the header. |
 | `GET /patients/{id}/contact` | `{patientId, fullName, email, responsiblePatientId?}` for internal services. `email` is `null` for a minor without email; notify `responsiblePatientId` instead. A request carrying `X-Patient-Id` (that is, from the gateway) may only read its own contact (`403` otherwise). |
+| `GET /dependents` | Role `patient`: the minors linked to the caller as responsible adult. |
+| `GET /patients` | Reception or admin: patient directory for verification. |
+| `POST /patients` | Reception or admin: create a patient (for example a minor without email). |
+| `PUT /patients/{id}` | Reception or admin: edit profile data. |
+| `PATCH /patients/{id}/verification` | Reception or admin: `{enabled}` verifies or revokes an account (RF-13); `422` without `enabled`. |
+| `PATCH /patients/{id}/responsible` | Reception or admin: `{responsiblePatientId}` links or unlinks the responsible adult of a minor. |
+| `GET /internal/patients/{id}` | Internal services only, with `X-Service-Key`; not exposed by the gateway. |
 | `GET /healthz` | `200` when MySQL answers, `503` otherwise. |
 | `GET /metrics` | Prometheus metrics. |
 

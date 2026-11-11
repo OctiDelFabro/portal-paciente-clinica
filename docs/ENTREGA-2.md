@@ -1,4 +1,6 @@
 # Estado de la Entrega 2
+
+> **Documento histórico.** Describe el estado al 23/10/2026. Las limitaciones y pendientes de abajo se resolvieron para la presentación final, salvo lo indicado en «Bonus anunciados». Estado vigente: [README](../README.md), [ARCHITECTURE](ARCHITECTURE.md) y [VERIFICACION](VERIFICACION.md).
 Referencia: enunciado, sección 6.3, entrega del viernes 23 de octubre: "Dominio propio de punta a punta".
 
 **Resumen:** la reserva de turnos funciona de punta a punta. Turnos guarda la reserva en MySQL y publica el evento por outbox; Notificaciones lo consume en forma idempotente y envía el correo (capturado por Mailpit). Todo el recorrido queda en una traza de Jaeger y en logs con el mismo `correlation_id`.
@@ -21,6 +23,8 @@ Se anuncian dos desafíos para incorporar al alcance (pendiente de confirmación
 1. **Tests e2e:** recorrido automatizado frontend → gateway → servicios → Mailpit.
 2. **Actualizaciones en tiempo real:** avisos del portal (`portal_notices`) enviados al frontend por Server-Sent Events.
 
+Cierre en la presentación final: no se implementó SSE; la lista de turnos se actualiza por consulta periódica cada 15 s. Los recorridos de navegador automatizados usan respuestas HTTP simuladas; no hay un e2e contra la infraestructura completa.
+
 ## Demostración sugerida (10 minutos)
 1. `docker compose up --build`.
 2. Reservar `pat-001` con `doc-001` (README). Mostrar el correo en Mailpit y la traza en Jaeger.
@@ -38,4 +42,4 @@ Se anuncian dos desafíos para incorporar al alcance (pendiente de confirmación
 - `scripts/check_contract.py` falla de forma intermitente en Windows en el chequeo "limite de cuerpo" (el servidor corta la conexión antes de que llegue el 413). Ya ocurría en la Entrega 1; pendiente de corregir.
 
 ## Pendiente para la presentación final
-Pacientes y Médicos reales, búsqueda (D6), caché con medición (D7), balanceo de Turnos (D12), pruebas de carga (D13), proveedor externo (D9), alertas, despliegue público de Notificaciones y `docs/POSTMORTEM.md`.
+Pacientes y Médicos reales, búsqueda (D6), caché con medición (D7), balanceo de Turnos (D12), pruebas de carga (D13), proveedor externo (D9), alertas, despliegue público de Notificaciones y [`POSTMORTEM.md`](../POSTMORTEM.md).

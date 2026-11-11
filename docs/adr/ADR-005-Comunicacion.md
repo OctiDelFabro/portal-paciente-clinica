@@ -1,5 +1,5 @@
 # ADR-005 — Comunicación inicial
-**Decisión D5 · Estado: diseño inicial para Entrega 1.** HTTP para consultas y comandos que necesitan respuesta; RabbitMQ para eventos internos. Los parámetros siguientes son valores técnicos iniciales para validar durante implementación.
+**Decisión D5 · Estado: aceptada e implementada.** HTTP para consultas y comandos que necesitan respuesta; RabbitMQ para eventos internos. Los parámetros se definieron en la Entrega 1; Las secciones de validación y actualización posteriores reflejan el estado final implementado.
 
 ## Contexto y decisión
 **Actualización 23/10/2026:** la capacidad publicada pasa a ser **Turnos** para el consumidor Car Cruds ([ADR-008](ADR-008-Contrato-propio.md)). Notificaciones conserva su API, pero ya no es la capacidad compartida.
@@ -15,7 +15,7 @@ React/TypeScript accede por el gateway a los servicios. Los servicios consultan 
 | Turnos → RabbitMQ → Notificaciones | Evento de dominio | Avisos internos y correo independientes del resultado del turno. |
 
 ## Tiempos de espera y reintentos
-- Presupuesto inicial del gateway: 5 s por solicitud. Cada llamada interna tiene hasta 2 s, dentro del presupuesto total; conexión hasta 500 ms. No se ejecutan reintentos fuera del plazo original.
+- Presupuesto inicial del gateway: 5 s por solicitud. Cada llamada del gateway a un servicio tiene hasta 2 s, dentro del presupuesto total; conexión hasta 500 ms. Las llamadas servicio a servicio (Turnos → Pacientes/Médicos) usan 400 ms. No se ejecutan reintentos fuera del plazo original.
 - Consultas GET: hasta un reintento ante error de red, 502, 503 o 504, con espera de 100–300 ms y presupuesto restante suficiente.
 - Escrituras: no reintentar automáticamente sin idempotencia. Una respuesta ausente no demuestra que el comando no se ejecutó.
 - API externa de Notificaciones: cliente con timeout total de 5 s. Tras pérdida de respuesta o 503, repetir el POST con la misma Idempotency-Key y los mismos datos. Hasta dos reintentos adicionales con esperas de 1 s y 2 s; ante 429 respetar Retry-After y detener el reintento inmediato.
@@ -39,14 +39,14 @@ Se proponen tres reintentos internos, tras 5 s, 30 s y 120 s. Después, una cola
 El aviso del portal y el correo tienen estados independientes. Una falla del correo no revierte una reserva ni una cancelación, y no impide persistir el aviso interno. Si falla Notificaciones, el evento queda pendiente y el aviso puede aparecer más tarde; no se promete publicación inmediata durante una caída.
 
 ## Recordatorios
-Turnos es dueño del horario vigente. Un programador buscará reservas activas que alcancen startAt − 24 h, usando una clave única por turno y versión. Cancelar invalida el trabajo y reprogramar crea uno para la nueva versión. El consumidor verifica la versión/estado vigente antes de enviar; un aviso ya entregado al proveedor no puede retirarse. En el límite exacto de 24 h, se omite un recordatorio redundante generado junto con la confirmación (propuesta técnica pendiente de validar con el grupo).
+Turnos es dueño del horario vigente. Un programador buscará reservas activas que alcancen startAt − 24 h, con un marcador único por ID de reserva. Cancelar invalida el trabajo y reprogramar crea una reserva nueva con su propio ID. El consumidor verifica la versión/estado vigente antes de enviar; un aviso ya entregado al proveedor no puede retirarse.
 
 ## Alternativas y consecuencias
 HTTP para todo reduce transportes, pero obliga a construir recuperación de eventos pendientes. RabbitMQ para el otro grupo exige compartir operación y credenciales del broker. Se adopta HTTP externo y mensajería interna.
 Se acepta consistencia eventual en avisos, posible repetición de entregas de eventos y complejidad de outbox/inbox. La idempotencia de trabajos no garantiza por sí sola un único correo si el proveedor acepta un envío y se pierde su respuesta; se evaluará el soporte de idempotencia del proveedor.
 
 ## Estado verificable
-El mock implementa únicamente el contrato HTTP, con memoria e idempotencia durante su ejecución. No implementa eventos reales, timeouts interservicio, reintentos de correo ni DLQ. El grupo proveedor externo, su contrato y el servicio consumidor siguen pendientes de asignación.
+El mock implementa únicamente el contrato HTTP, con memoria e idempotencia durante su ejecución. No implementa eventos reales, timeouts interservicio, reintentos de correo ni DLQ. (Estado de la Entrega 1: el proveedor externo y su contrato se asignaron después, ver ADR-009.)
 
 ## Referencias
 - [RabbitMQ: publisher confirms y consumer acknowledgements](https://www.rabbitmq.com/docs/confirms).

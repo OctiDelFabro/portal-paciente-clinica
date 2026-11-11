@@ -8,11 +8,11 @@
   "servers": [
     {
       "url": "http://localhost:8080",
-      "description": "Servicio real a traves del gateway local (docker compose). URL publica pendiente para la presentacion final."
+      "description": "Servicio real a través del gateway local (docker compose); también en el listener público local 8088. En producción, el gateway público enruta /v1 a Notificaciones en el mismo host que Turnos para socios."
     },
     {
-      "url": "http://localhost:8085",
-      "description": "Mock local en memoria, sin dependencias."
+      "url": "http://localhost:8086",
+      "description": "Mock local en memoria, sin dependencias (puerto 8086 en compose; 8085 si se ejecuta con go run)."
     }
   ],
   "security": [

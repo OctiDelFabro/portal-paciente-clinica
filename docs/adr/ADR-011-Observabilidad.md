@@ -1,5 +1,5 @@
 # ADR-011 — Observabilidad
-**Decisión D11 · Estado: primera versión, implementada parcialmente en la Entrega 2.** Logs JSON correlacionados, métricas Prometheus, trazas OpenTelemetry en Jaeger y un tablero Grafana. Alertas y agregación de logs quedan para la presentación final.
+**Decisión D11 · Estado: implementada.** Logs JSON correlacionados, métricas Prometheus, trazas OpenTelemetry en Jaeger y un tablero Grafana. Alertas y agregación de logs quedan pendientes (ver Pendientes).
 
 ## Criterio
 **Cada señal existe porque responde una pregunta concreta o dispara una decisión.** Si una métrica o un campo de log no cumple eso, no se guarda. También se descarta lo que expone datos de salud o genera series sin límite.
@@ -31,12 +31,19 @@ Los valores son propuestas iniciales; D13 los valida con pruebas de carga.
 | `notifications_delivered_total{result}` | ¿Cuántos correos se envían, reintentan o fallan definitivamente? | `failed` creciente indica un problema persistente del proveedor. |
 | `turnos_partner_requests_total{consumer,operation,outcome}` | ¿Cómo usa Car Cruds la capacidad publicada de Turnos? `outcome`: `ok`, `replayed`, `invalid`, `unauthorized`, `rate_limited` y los motivos de rechazo de negocio. | Soporte al consumidor sin pedirle logs: muchos `replayed` indican reintentos por timeouts; `idempotency_conflict`, claves mal reutilizadas; `unauthorized` sostenido, una clave mal configurada. Es además la base para conciliar lo facturado con lo pedido. |
 | `gateway_upstream_errors_total{upstream,kind}` · `gateway_retries_total{upstream}` | ¿Qué servicio interno falla o tarda, visto desde la entrada? | Ubicar la dependencia caída sin revisar cada servicio. |
+| `gateway_upstream_requests_total{upstream,instance}` · `gateway_upstream_healthy{instance}` | ¿El balanceo reparte entre `turnos-1` y `turnos-2`? ¿Qué instancia salió de la rotación? | Evidencia de D12: si una instancia concentra todo o figura en 0, revisar su salud antes de culpar a la carga. `instance` toma solo las URLs configuradas. |
+| `gateway_rate_limited_total{route}` | ¿Cuántas solicitudes del portal se cortan con 429 por paciente o IP? | Ajustar los límites: un crecimiento sostenido en una ruta legítima indica un límite demasiado bajo; en el login, un intento de fuerza bruta. |
+| `cache_requests_total{result}` | ¿La caché de disponibilidad acierta? (`hit`, `miss`, `error`) | Tasa de aciertos de D7 (objetivo > 80 %). `error` creciente indica Redis caído: el portal sigue, pero MySQL recibe todas las lecturas. |
+| `search_index_lag_seconds` (histograma) | ¿Cuánto tarda un cambio de perfil de médico en verse en la búsqueda? | Frescura de D6: si el p95 supera unos segundos, el indexador está atrasado u OpenSearch no responde. |
+| `medicos_indexer_dlq_depth` · `historia_dlq_depth` | ¿Hay eventos que el indexador o Historia clínica no pudieron procesar? | Igual que `notifications_dlq_depth`: mayor que 0 requiere inspección y reproceso manual. |
+| `provider_requests_total{operation,outcome}` · `provider_request_duration_seconds{operation}` · `provider_circuit_state` | ¿Responde el proveedor energético externo, cuánto tarda y está abierto el circuito? (`circuit_open` = rechazado localmente) | Justifica el presupuesto de 1.200 ms y el circuito de 5 fallos (D9/D10); con el circuito abierto los turnos quedan con costo `pending` sin bloquear la reserva. |
+| `pacientes_auth_total{operation,outcome}` | ¿Cuántos registros e inicios de sesión fallan y por qué? | Detectar fuerza bruta (bloqueo tras 5 intentos fallidos) o un problema de credenciales tras un despliegue. No guarda el correo ni el ID del paciente. |
 
 **Etiquetas acotadas.** `route` es el patrón registrado (`GET /appointments/{id}`), nunca la URL real. `reason`, `result` y `outcome` tienen valores fijos. `consumer` solo toma los nombres configurados.
 
 **Lo que no se guarda como métrica:** `patientId`, `doctorId`, correos, `appointmentId`. Generarían una serie por persona, Prometheus no escala con esa cardinalidad, y además serían datos de salud asociados a una persona.
 
-**Previstas para la presentación final:** aciertos/fallos de caché (D7), retraso del índice de búsqueda (D6) y solicitudes por instancia (D12).
+Las métricas de caché (D7), retraso del índice de búsqueda (D6) y solicitudes por instancia (D12) se incorporaron para la presentación final y figuran en la tabla.
 
 ## Logs
 Formato JSON a stdout con `log/slog` (`internal/platform/obs`). Un registro por hecho, no por línea de código.
@@ -81,4 +88,4 @@ Alertas propuestas para la presentación final:
 - **Etiquetar métricas por paciente:** se descarta por cardinalidad y privacidad; los casos puntuales se buscan en logs y trazas.
 
 ## Pendientes
-Agregación de logs (Loki o equivalente), reglas de alerta en Prometheus/Grafana y métricas de D6, D7 y D12.
+Agregación de logs (Loki o equivalente) y reglas de alerta en Prometheus/Grafana: las alertas de la sección anterior siguen como propuesta, no están configuradas.

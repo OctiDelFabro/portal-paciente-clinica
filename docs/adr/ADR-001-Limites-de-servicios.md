@@ -1,5 +1,5 @@
 # ADR-001 — Límites de los servicios
-Decisión D1 · Estado: límites preliminares definidos para la Entrega 1
+Decisión D1 · Estado: límites definidos en la Entrega 1 y validados con la implementación final (ver «Validación Entrega 2» y [ARCHITECTURE](../ARCHITECTURE.md)).
 Ubicación prevista en el repositorio: docs/adr/ADR-001-Limites-de-servicios.md.
 Contexto
 El grupo construirá un portal paciente para una única clínica, con pacientes, médicos y recepcionistas. El dominio incluye restricciones temporales, vínculos entre menores y responsables, permisos de historia clínica y prevención de turnos superpuestos. El enunciado exige al menos tres microservicios y un API Gateway.
@@ -16,7 +16,7 @@ Será propietario de historias clínicas y registros de atenciones. Aplicará pe
 Notificaciones
 Será propietario del catálogo de plantillas, solicitudes, estados de procesamiento y avisos internos. Consumirá eventos del portal y ofrecerá al grupo consumidor una API HTTP de correos por plantillas. El detalle del contrato se registra en D8. *Actualización 23/10/2026: la capacidad publicada pasó a ser Turnos ([ADR-008](ADR-008-Contrato-propio.md)); la API de Notificaciones se mantiene sin consumidor asignado.*
 Relaciones y propiedad de los datos
-El frontend React/TypeScript centralizará la interacción y accederá al backend a través del API Gateway Go/Gin. El gateway validará las credenciales y dirigirá solicitudes, mientras las reglas de negocio se ejecutarán en los servicios responsables.
+El frontend React/TypeScript centralizará la interacción y accederá al backend a través del API Gateway en Go (`net/http`, sin framework). El gateway validará las credenciales y dirigirá solicitudes, mientras las reglas de negocio se ejecutarán en los servicios responsables.
 Cada servicio accederá solo a su almacenamiento propio. Las consultas entre servicios se realizarán mediante contratos, y los eventos internos utilizarán RabbitMQ. La búsqueda y la caché serán representaciones derivadas, no fuentes autoritativas para confirmar una reserva.
 La persistencia del diseño existente es MySQL para Turnos, Médicos, Pacientes y Notificaciones, y MongoDB para Historia clínica. El uso concreto y sus limitaciones se justificarán en la versión inicial de D3; la separación lógica de datos no obliga a un servidor físico por servicio en desarrollo local.
 Justificación
@@ -31,13 +31,13 @@ Base de datos común con acceso directo entre servicios
 Facilitaría consultas cruzadas iniciales, pero acoplaría los servicios al esquema interno de los demás y debilitaría la propiedad de los datos. Se eligen interfaces explícitas y almacenamiento lógicamente separado.
 Consecuencias y limitaciones
 Se mantienen cinco microservicios de negocio y un gateway, con contratos y dependencias que deberán gestionarse. Las operaciones que necesiten datos de otro servicio tendrán que definir tiempos de espera y comportamiento ante fallas. La comunicación y los errores parciales se desarrollarán en D5, D4 y las decisiones posteriores de resiliencia.
-La publicación de eventos y el registro de reservas deben coordinarse para no perder avisos ni generar efectos duplicados. La estrategia de concurrencia y publicación fiable sigue pendiente de diseño concreto. La división inicial se validará durante la implementación; si cambia, el ADR anterior conservará su historia.
+La publicación de eventos y el registro de reservas deben coordinarse para no perder avisos ni generar efectos duplicados. La estrategia de concurrencia y publicación fiable se resolvió después en ADR-004 (bloqueo por recurso) y ADR-005 (outbox e inbox). La división inicial se validará durante la implementación; si cambia, el ADR anterior conservará su historia.
 Referencias del proyecto
 SPEC.md contiene el alcance y las reglas confirmadas. docs/ARCHITECTURE.md explica los componentes y flujos. ADR-008-Contrato-propio.md desarrolla la capacidad compartida. Los diagramas de contexto y contenedores deben actualizarse para reflejar esta decisión.
 
 ## Validación Entrega 2
 **Resultado: límites confirmados, sin cambios.**
-- Turnos implementa reserva y cancelación con datos propios (`appointments`, `booking_locks`, `outbox`) y no lee bases ajenas. Necesitó médicos y pacientes, que se obtienen por el puerto `Directory` (hoy datos semilla, luego HTTP).
+- Turnos implementa reserva y cancelación con datos propios (`appointments`, `booking_locks`, `outbox`) y no lee bases ajenas. Necesitó médicos y pacientes, que se obtienen por el puerto `Directory` (en la Entrega 2 eran datos semilla; en la versión final, HTTP a Pacientes y Médicos).
 - Notificaciones recibe solo identificadores en los eventos y resuelve contactos por su puerto `Contacts`, sin acceder a la base de Pacientes.
 - La separación permitió que una caída de RabbitMQ o del correo no afecte la reserva (ADR-010).
-- Pendiente de validar con implementación: Pacientes, Médicos e Historia clínica siguen como esqueletos.
+- Presentación final: Pacientes, Médicos e Historia clínica están implementados con base propia y se integran por HTTP y eventos, sin leer bases ajenas.

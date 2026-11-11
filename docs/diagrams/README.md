@@ -1,7 +1,7 @@
 # Diagramas actualizados
-contexto.mmd y contenedores.mmd contienen Mermaid procesable. Representan el diseño, no componentes operativos.
+contexto.mmd y contenedores.mmd contienen Mermaid procesable. Representan el sistema implementado para la presentación final.
 Incluyen frontend, propósito y transporte de las conexiones, propiedad de la agenda en Turnos y conexión explícita de Notificaciones a su base.
-La capacidad externa a consumir permanece pendiente de asignación; no se inventa un proveedor.
+La capacidad externa consumida es la estimación de consumo de `ArquitecturasoftwareRenewableEnergy` (ADR-009). La identidad la emite el servicio Pacientes (JWT, ADR-014).
 Los archivos diagrams.net originales de Drive no fueron editados. Para conservar ese formato, trasladar estos cambios a los originales antes de presentar. Mermaid puede previsualizarse en GitHub.
 
 
@@ -12,29 +12,28 @@ flowchart TB
  p["Paciente / responsable"]
  m["Médico"]
  r["Recepción"]
+ a["Administración"]
  portal["Portal paciente de clínica"]
  consumidor["Car Cruds: servicio Empleados"]
- proveedor["Grupo proveedor: pendiente de asignación"]
- correo["Proveedor de correo: pendiente"]
- identidad["Proveedor de identidad: pendiente"]
+ proveedor["ArquitecturasoftwareRenewableEnergy: estimación de consumo energético (Render)"]
+ correo["Correo SMTP (Mailpit en compose)"]
  p -->|"Turnos e historia clínica"| portal
  m -->|"Agenda y atenciones"| portal
  r -->|"Pacientes, vínculos y turnos"| portal
+ a -->|"Perfiles de personal y pacientes"| portal
  consumidor -->|"API HTTP de turnos (X-API-Key, facturada)"| portal
- portal -.->|"Capacidad a definir"| proveedor
+ portal -->|"HTTP: costo energético por turno (circuito + fallback)"| proveedor
  portal -->|"Envío de correos"| correo
- portal -->|"Autenticación"| identidad
-
 ```
 
 ## Contenedores
 
-Actualizado en la Entrega 2: outbox y DLQ, Mailpit y la pila de observabilidad. Turnos, Notificaciones y el gateway están operativos; Pacientes, Médicos e Historia clínica siguen como esqueletos.
+Actualizado para la presentación final: los seis componentes (gateway, Turnos, Pacientes, Médicos, Historia clínica y Notificaciones) están operativos, con outbox y DLQ, caché Redis, OpenSearch, proveedor externo y la pila de observabilidad.
 
 ```mermaid
 flowchart TB
- usuarios["Pacientes, médicos y recepción"] --> web["Frontend React + TypeScript"]
- web -->|"HTTP/JSON"| gw["API Gateway Go"]
+ usuarios["Pacientes, médicos, recepción y administración"] --> web["Frontend React + TypeScript"]
+ web -->|"HTTP/JSON + JWT"| gw["API Gateway Go: valida JWT emitido por Pacientes"]
  consumidor["Servicio consumidor externo"] -->|"HTTP /v1 + X-API-Key"| gw
  subgraph servicios["Microservicios propios"]
   t["Turnos: agenda y reservas"]
@@ -53,16 +52,20 @@ flowchart TB
  h -->|"Validar vínculos HTTP"| p
  h -->|"Validar relación médico-paciente HTTP"| t
  n -->|"Obtener contactos HTTP"| p
+ n -->|"Estado del turno HTTP"| t
+ t -->|"Estimación energética HTTP (circuito)"| prov["Proveedor externo RenewableEnergy (Render)"]
  t -->|"Outbox → eventos turnos.*.v1"| mq["RabbitMQ portal.events.v1 + DLQ"]
  mq -->|"Consumo idempotente (inbox)"| n
+ mq -->|"Eventos de turnos (inbox)"| h
+ mq -->|"Indexación de perfiles"| m
  t --> dt[("MySQL Turnos")]
  p --> dp[("MySQL Pacientes")]
  m --> dm[("MySQL Médicos")]
  h --> dh[("MongoDB Historia clínica")]
  n --> dn[("MySQL Notificaciones")]
- t -.->|"Lectura derivada: flujo por validar"| redis["Redis"]
+ t -->|"Caché de disponibilidad (cache-aside, TTL 30 s)"| redis["Redis"]
  m -->|"Proyección de perfiles"| os["OpenSearch"]
- n -->|"Correo SMTP"| correo["Mailpit local / proveedor de correo pendiente"]
+ n -->|"Correo SMTP"| correo["Mailpit (SMTP)"]
  subgraph obs["Observabilidad"]
   jaeger["Jaeger: trazas OTLP"]
   prom["Prometheus: métricas"]
@@ -75,7 +78,5 @@ flowchart TB
  prom -.->|"Scrape /metrics"| t
  prom -.->|"Scrape /metrics"| n
  graf -->|"Consultas PromQL"| prom
- gw -->|"Verificación de identidad"| idp["Proveedor de identidad pendiente"]
-
 
 ```

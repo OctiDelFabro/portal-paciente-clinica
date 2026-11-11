@@ -52,7 +52,7 @@ Para transiciones de estado de turnos existentes (ej. cancelación):
 Se configura el aislamiento transaccional en `READ COMMITTED` (ADR-003). La serialización rigurosa de las reservas la garantizan los bloqueos explícitos de `booking_locks`, evitando los *gap locks* excesivos que produce `REPEATABLE READ` en MySQL/InnoDB.
 
 ### 4. Idempotencia y Rate Limiting
-- **Socios externos**: Las solicitudes `POST /v1/appointments` requieren encabezado `Idempotency-Key`. La tabla `partner_bookings` registra `(consumer, idempotency_key)` con restricción `UNIQUE`. Reintentos con la misma clave retornan el turno original (`200 OK`) sin recrearlo; cargas con misma clave pero distinto contenido devuelven `409 Conflict` (`IDEMPOTENCY_CONFLICT`).
+- **Socios externos**: Las solicitudes `POST /v1/appointments` requieren encabezado `Idempotency-Key`. La tabla `partner_bookings` registra `(consumer, idempotency_key)` con restricción `UNIQUE`. Reintentos con la misma clave retornan el turno original (`201 Created` con `Idempotency-Replayed: true`) sin recrearlo; cargas con misma clave pero distinto contenido devuelven `409 Conflict` (`IDEMPOTENCY_CONFLICT`).
 - **Límite de tasa**: Token bucket en memoria (`apikey.Limiter`) restringe el tráfico de socios a un máximo configurable (ej. 60 req/min), respondiendo `429 Too Many Requests` ante ráfagas excesivas.
 
 ## Alternativas consideradas
@@ -68,7 +68,7 @@ Se configura el aislamiento transaccional en `READ COMMITTED` (ADR-003). La seri
 2. **Benchmark de Carga k6 (`infra/k6/booking-peak.js`)**:
    - 20 VUs concurrentes compitiendo durante 20 segundos generando 2.916 solicitudes bajo contención.
    - 100% de consistencia: las colisiones de horario retornaron consistentemente `409 Conflict`, los excesos de cuota retornaron `429 Too Many Requests`, y los ganadores obtuvieron `201 Created`.
-   - Latencia p95 observada: 62.2 ms.
+   - Latencia p95 reportada: 62.2 ms (antecedente sin reejecución validada; ver `docs/VERIFICACION.md`).
 
 ## Consecuencias
 

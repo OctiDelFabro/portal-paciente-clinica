@@ -4,7 +4,7 @@ Proyecto: ArquitecturasoftwareRenewableEnergy. Proveedor: servicio Consumo, publ
 
 ## Contrato formal
 
-[OpenAPI 3.0.3 en JSON](v1/openapi.json), formato estándar procesable. Las reglas cruzadas y el redondeo descritos aquí son parte normativa del contrato. La especificación se puede importar en herramientas compatibles; no depende de instalar una herramienta para leerla.
+[OpenAPI 3.0.3 en JSON](openapi.json), formato estándar procesable. Las reglas cruzadas y el redondeo descritos aquí son parte normativa del contrato. La especificación se puede importar en herramientas compatibles; no depende de instalar una herramienta para leerla.
 
 ## Utilidad y límites
 
@@ -44,9 +44,9 @@ Misma entrada y algoritmo producen igual energía. traceId es metadato variable.
 
 ## Ejemplo comprobable
 
-[Solicitud válida](v1/examples/solicitud-valida.json) y [respuesta 200](v1/examples/respuesta-200.json): 30 días, iluminación 6 kWh, heladera 32,4 kWh y lavarropas 9 kWh. Total 47,4 kWh; promedio 1,58 kWh/día. Es un escenario ilustrativo, no una medición ni una ficha universal.
+[Solicitud válida](examples/solicitud-valida.json) y [respuesta 200](examples/respuesta-200.json): 30 días, iluminación 6 kWh, heladera 32,4 kWh y lavarropas 9 kWh. Total 47,4 kWh; promedio 1,58 kWh/día. Es un escenario ilustrativo, no una medición ni una ficha universal.
 
-[Solicitud inválida](v1/examples/solicitud-invalida-dias.json): declara 31 días de uso para un período de 30. Debe responder [422](v1/examples/respuesta-422.json) con el campo observado. Los ejemplos restantes de errores están en v1/examples y en OpenAPI.
+[Solicitud inválida](examples/solicitud-invalida-dias.json): declara 31 días de uso para un período de 30. Debe responder [422](examples/respuesta-422.json) con el campo observado. Los ejemplos restantes de errores están en [examples](examples) y en OpenAPI.
 
 ## Errores y reintentos
 
@@ -70,11 +70,11 @@ Presupuesto propuesto con instancia activa: 5 s; ante fallo de conexión o 503, 
 
 Cambios de significado, unidades, fórmula, campos obligatorios o errores incompatibles requieren /v2 y transición acordada. La semántica de versionAlgoritmo y las reglas del cálculo no se cambian silenciosamente dentro de v1. Se conserva v1 hasta que el consumidor pueda migrar. Los esquemas actuales rechazan campos desconocidos. Cualquier campo nuevo de respuesta requiere un contrato acordado y la actualización de los consumidores antes de enviarlo; una extensión no acordada no se considera compatible con estos esquemas.
 
-El proveedor verificará implementación contra OpenAPI, ejemplos y casos límite; el grupo consumidor tendrá tests que detecten incompatibilidades. La [guía de mock](MOCK.md) explica arranque, credenciales de prueba y escenarios ejecutables. La asignación del consumidor y su caso concreto todavía no fueron comunicados.
+El proveedor verificará implementación contra OpenAPI, ejemplos y casos límite; el grupo consumidor tendrá tests que detecten incompatibilidades. La guía de mock del repositorio del proveedor (`MOCK.md`, no copiada aquí) explica arranque, credenciales de prueba y escenarios ejecutables. La asignación del consumidor y su caso concreto todavía no fueron comunicados.
 
 ## Distinción respecto del modo invitado web
 
-Este contrato es la integración M2M de otro grupo y conserva X-API-Key. La calculadora web no exige registro ni dicha clave: usa rutas anónimas separadas de consumo y recomendación solar, documentadas en [GUEST-MODE.md](../GUEST-MODE.md) y [OpenAPI invitado](guest-v1/openapi.json). No se elimina seguridad M2M ni se expone una credencial en React al habilitar visitas sin cuenta.
+Este contrato es la integración M2M de otro grupo y conserva X-API-Key. La calculadora web no exige registro ni dicha clave: usa rutas anónimas separadas de consumo y recomendación solar, documentadas en `GUEST-MODE.md` y `guest-v1/openapi.json` del repositorio del proveedor (no copiados aquí). No se elimina seguridad M2M ni se expone una credencial en React al habilitar visitas sin cuenta.
 
 ## Revisión compatible 1.0.1
 
@@ -88,4 +88,4 @@ POST /api/v1/estimaciones-consumo aplica el mismo caso de uso que las rutas temp
 
 La traza usa un traceId W3C de 32 caracteres hexadecimales. X-Request-Id, si se suministra válido, se conserva como referencia del consumidor; ambos se registran en logs. El cliente no debe asumir que son iguales. El parser normaliza ceros y exponentes antes de crear los racionales y rechaza los valores fuera del rango o con más de seis decimales efectivos.
 
-El [contrato adicional del catálogo](catalog-v1/openapi.json) define lectura pública y POST /api/v1/publico/consumo-catalogo. Es una API separada: usa ids propios, resuelve la potencia en MySQL y no acepta potencias enviadas por el navegador. No cambia la entrada M2M externa ni exige claves en React.
+El contrato adicional del catálogo (`catalog-v1/openapi.json`, en el repositorio del proveedor) define lectura pública y POST /api/v1/publico/consumo-catalogo. Es una API separada: usa ids propios, resuelve la potencia en MySQL y no acepta potencias enviadas por el navegador. No cambia la entrada M2M externa ni exige claves en React.
